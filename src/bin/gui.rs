@@ -116,7 +116,12 @@ impl Configurator {
 
     fn save(&mut self) {
         self.status = match serialize_config(&self.keys)
-            .and_then(|s| Ok(std::fs::write(&self.path, s)?))
+            .and_then(|s| {
+                if let Some(dir) = self.path.parent() {
+                    std::fs::create_dir_all(dir)?;
+                }
+                Ok(std::fs::write(&self.path, s)?)
+            })
         {
             Ok(()) => format!("Saved {}", self.path.display()),
             Err(e) => format!("Save failed: {e}"),
