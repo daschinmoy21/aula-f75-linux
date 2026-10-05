@@ -42,6 +42,14 @@ pub fn connect() -> Result<Box<dyn Device>> {
             }
         }
     }
+    if api
+        .device_list()
+        .any(|d| d.vendor_id() == 0x3554 && d.product_id() == 0xfa09)
+    {
+        return Err(anyhow!(
+            "Only the 2.4GHz dongle was found. Settings can't be changed wirelessly; plug in the USB cable."
+        ));
+    }
     Err(anyhow!(
         "No supported device found (USB connected? hidraw permissions?)"
     ))
