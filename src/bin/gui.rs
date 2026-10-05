@@ -8,8 +8,8 @@ use std::path::PathBuf;
 
 /// Matrix is column-major with 6 rows per column (light_pos = col * 6 + row).
 const ROWS: usize = 6;
-const KEY_W: f32 = 46.0;
-const KEY_H: f32 = 46.0;
+const KEY_W: f32 = 48.0;
+const KEY_H: f32 = 52.0;
 
 /// (value, label) choices for the key-function list.
 fn choices() -> Vec<(String, String)> {
@@ -21,9 +21,9 @@ fn choices() -> Vec<(String, String)> {
         v.push((0x1e + i as u32, c.to_string()));
     }
     for (code, name) in [
-        (0x28, "Enter"), (0x29, "Esc"), (0x2a, "Backspace"), (0x2b, "Tab"), (0x2c, "Space"),
+        (0x28, "Enter"), (0x29, "Esc"), (0x2a, "Bksp"), (0x2b, "Tab"), (0x2c, "Space"),
         (0x2d, "-"), (0x2e, "="), (0x2f, "["), (0x30, "]"), (0x31, "\\"), (0x33, ";"),
-        (0x34, "'"), (0x35, "`"), (0x36, ","), (0x37, "."), (0x38, "/"), (0x39, "Caps Lock"),
+        (0x34, "'"), (0x35, "`"), (0x36, ","), (0x37, "."), (0x38, "/"), (0x39, "Caps"),
         (0x46, "PrtSc"), (0x47, "ScrLk"), (0x48, "Pause"), (0x49, "Insert"), (0x4a, "Home"),
         (0x4b, "PgUp"), (0x4c, "Delete"), (0x4d, "End"), (0x4e, "PgDn"), (0x4f, "Right"),
         (0x50, "Left"), (0x51, "Down"), (0x52, "Up"),
@@ -133,16 +133,67 @@ impl Configurator {
     }
 }
 
-fn button(id: &'static str, label: &str) -> gpui::Stateful<gpui::Div> {
+// shadcn/ui "zinc" dark theme, blue accent.
+const BG: u32 = 0x09090b;
+const CARD: u32 = 0x0c0c0f;
+const SURFACE: u32 = 0x18181b;
+const BORDER: u32 = 0x27272a;
+const MUTED_FG: u32 = 0xa1a1aa;
+const FG: u32 = 0xfafafa;
+const ACCENT: u32 = 0x3b82f6;
+const ACCENT_HOVER: u32 = 0x2563eb;
+
+#[derive(Clone, Copy, PartialEq)]
+enum Variant {
+    Primary,
+    Outline,
+}
+
+fn button(id: &'static str, label: &str, variant: Variant) -> gpui::Stateful<gpui::Div> {
+    let (bg, hover, fg, border) = match variant {
+        Variant::Primary => (ACCENT, ACCENT_HOVER, FG, ACCENT),
+        Variant::Outline => (BG, SURFACE, FG, BORDER),
+    };
     div()
         .id(id)
+        .h(px(32.0))
         .px_3()
-        .py_1()
+        .flex()
+        .items_center()
         .rounded_md()
-        .bg(rgb(0x3b4252))
-        .hover(|s| s.bg(rgb(0x4c566a)))
+        .border_1()
+        .border_color(rgb(border))
+        .bg(rgb(bg))
+        .text_color(rgb(fg))
+        .text_sm()
+        .font_weight(gpui::FontWeight::MEDIUM)
+        .hover(move |s| s.bg(rgb(hover)))
         .cursor_pointer()
         .child(label.to_string())
+}
+
+fn small_button(id: (&'static str, usize), label: &str) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .size(px(24.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_md()
+        .border_1()
+        .border_color(rgb(BORDER))
+        .text_sm()
+        .hover(|s| s.bg(rgb(SURFACE)))
+        .cursor_pointer()
+        .child(label.to_string())
+}
+
+fn section(title: &str) -> gpui::Div {
+    div()
+        .text_xs()
+        .font_weight(gpui::FontWeight::MEDIUM)
+        .text_color(rgb(MUTED_FG))
+        .child(title.to_uppercase())
 }
 
 impl Render for Configurator {
@@ -155,10 +206,8 @@ impl Render for Configurator {
         for (i, k) in self.keys.iter().enumerate() {
             let (col, row) = (k.light_pos / ROWS, k.light_pos % ROWS);
             let c = &k.color;
-            let bg = rgb(((c.r as u32) << 16) | ((c.g as u32) << 8) | c.b as u32);
-            let lum = 0.3 * c.r as f32 + 0.59 * c.g as f32 + 0.11 * c.b as f32;
-            let fg = if lum > 140.0 { rgb(0x000000) } else { rgb(0xffffff) };
-            let label = self.label_for(&k.value).unwrap_or(&k.name).to_string();
+            let led = rgb(((c.r as u32) << 16) | ((c.g as u32) << 8) | c.b as u32);
+            let label = self.label_for(&k.value).unwrap_or(&k.name).replace("滚轮", "Knob");
             let selected = self.selected == Some(i);
             board = board.child(
                 div()
@@ -166,19 +215,24 @@ impl Render for Configurator {
                     .absolute()
                     .left(px(col as f32 * KEY_W))
                     .top(px(row as f32 * KEY_H))
-                    .w(px(KEY_W - 3.0))
-                    .h(px(KEY_H - 3.0))
+                    .w(px(KEY_W - 4.0))
+                    .h(px(KEY_H - 4.0))
                     .rounded_md()
-                    .bg(bg)
-                    .text_color(fg)
+                    .bg(rgb(SURFACE))
+                    .border_1()
+                    .border_color(rgb(if selected { ACCENT } else { BORDER }))
+                    .text_color(rgb(if selected { FG } else { MUTED_FG }))
                     .text_xs()
-                    .border_2()
-                    .border_color(if selected { rgb(0x88c0d0) } else { rgb(0x2e3440) })
+                    .overflow_hidden()
                     .flex()
+                    .flex_col()
+                    .justify_between()
                     .items_center()
-                    .justify_center()
+                    .hover(|s| s.bg(rgb(0x1f1f23)))
                     .cursor_pointer()
-                    .child(label)
+                    .child(div().flex_1().flex().items_center().child(label))
+                    // colour "LED" strip along the bottom edge
+                    .child(div().w_full().h(px(3.0)).bg(led))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.selected = Some(i);
                         cx.notify();
@@ -186,48 +240,100 @@ impl Render for Configurator {
             );
         }
 
-        let mut panel = div().flex().flex_col().gap_2().w(px(300.0));
+        let mut panel = div()
+            .w(px(300.0))
+            .p_4()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .rounded_lg()
+            .border_1()
+            .border_color(rgb(BORDER))
+            .bg(rgb(CARD));
+
         if let Some(i) = self.selected {
             let k = &self.keys[i];
+            let c = &k.color;
             panel = panel
-                .child(format!("Key: {}   (matrix {}, {})", k.name, k.light_pos / ROWS, k.light_pos % ROWS))
-                .child(format!("Code: {}", k.value))
-                .child("Colour")
-                .child(div().flex().flex_wrap().gap_1().children(PALETTE.iter().map(|&p| {
+                .child(
+                    div()
+                        .flex()
+                        .justify_between()
+                        .items_center()
+                        .child(
+                            div()
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .child(self.label_for(&k.value).unwrap_or(&k.name).to_string()),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(rgb(MUTED_FG))
+                                .child(k.value.clone()),
+                        ),
+                )
+                .child(section("Colour"))
+                .child(div().flex().flex_wrap().gap_2().children(PALETTE.iter().map(|&p| {
+                    let on = ((c.r as u32) << 16 | (c.g as u32) << 8 | c.b as u32) == p;
                     div()
                         .id(("sw", p as usize))
-                        .size(px(24.0))
-                        .rounded_sm()
+                        .size(px(22.0))
+                        .rounded_full()
                         .bg(rgb(p))
-                        .border_1()
-                        .border_color(rgb(0x4c566a))
+                        .border_2()
+                        .border_color(rgb(if on { ACCENT } else { BORDER }))
                         .cursor_pointer()
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.set_color(p);
                             cx.notify();
                         }))
                 })))
-                .child(div().flex().gap_2().children(["R", "G", "B"].iter().enumerate().map(
-                    |(ch, name)| {
-                        div()
-                            .flex()
-                            .gap_1()
-                            .child(*name)
-                            .child(button(["r-", "g-", "b-"][ch], "-").on_click(cx.listener(
-                                move |this, _, _, cx| {
-                                    this.nudge(ch, -16);
-                                    cx.notify();
-                                },
-                            )))
-                            .child(button(["r+", "g+", "b+"][ch], "+").on_click(cx.listener(
-                                move |this, _, _, cx| {
-                                    this.nudge(ch, 16);
-                                    cx.notify();
-                                },
-                            )))
-                    },
-                )))
-                .child("Function")
+                .child(div().flex().flex_col().gap_1().children(
+                    [("R", c.r), ("G", c.g), ("B", c.b)].into_iter().enumerate().map(
+                        |(ch, (name, val))| {
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .text_sm()
+                                .child(div().w(px(14.0)).text_color(rgb(MUTED_FG)).child(name))
+                                .child(small_button((["r-", "g-", "b-"][ch], 0), "−").on_click(
+                                    cx.listener(move |this, _, _, cx| {
+                                        this.nudge(ch, -16);
+                                        cx.notify();
+                                    }),
+                                ))
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .h(px(4.0))
+                                        .rounded_full()
+                                        .bg(rgb(SURFACE))
+                                        .child(
+                                            div()
+                                                .h_full()
+                                                .rounded_full()
+                                                .bg(rgb(ACCENT))
+                                                .w(gpui::relative(val as f32 / 255.0)),
+                                        ),
+                                )
+                                .child(small_button((["r+", "g+", "b+"][ch], 0), "+").on_click(
+                                    cx.listener(move |this, _, _, cx| {
+                                        this.nudge(ch, 16);
+                                        cx.notify();
+                                    }),
+                                ))
+                                .child(
+                                    div()
+                                        .w(px(28.0))
+                                        .text_xs()
+                                        .text_color(rgb(MUTED_FG))
+                                        .child(val.to_string()),
+                                )
+                        },
+                    ),
+                ))
+                .child(section("Function"))
                 .child(
                     div()
                         .id("choices")
@@ -235,13 +341,19 @@ impl Render for Configurator {
                         .overflow_y_scroll()
                         .flex()
                         .flex_col()
+                        .rounded_md()
+                        .border_1()
+                        .border_color(rgb(BORDER))
                         .children(self.choices.iter().enumerate().map(|(ci, (val, name))| {
                             let is_cur = *val == k.value;
                             div()
                                 .id(("choice", ci))
                                 .px_2()
-                                .bg(if is_cur { rgb(0x434c5e) } else { rgb(0x2e3440) })
-                                .hover(|s| s.bg(rgb(0x4c566a)))
+                                .py_1()
+                                .text_sm()
+                                .text_color(rgb(if is_cur { FG } else { MUTED_FG }))
+                                .bg(rgb(if is_cur { SURFACE } else { CARD }))
+                                .hover(|s| s.bg(rgb(SURFACE)))
                                 .cursor_pointer()
                                 .child(name.clone())
                                 .on_click(cx.listener({
@@ -256,36 +368,92 @@ impl Render for Configurator {
                         })),
                 );
         } else {
-            panel = panel.child("Select a key");
+            panel = panel.child(
+                div().text_sm().text_color(rgb(MUTED_FG)).child("Select a key to edit its colour and function."),
+            );
         }
 
         div()
             .size_full()
-            .bg(rgb(0x242933))
-            .text_color(rgb(0xeceff4))
-            .p_4()
+            .bg(rgb(BG))
+            .text_color(rgb(FG))
+            .p_6()
             .flex()
             .flex_col()
-            .gap_4()
+            .gap_5()
             .child(
                 div()
                     .flex()
-                    .gap_2()
-                    .child(button("save", "Save file").on_click(cx.listener(|this, _, _, cx| {
-                        this.save();
-                        cx.notify();
-                    })))
-                    .child(button("read", "Read from keyboard").on_click(cx.listener(|this, _, _, cx| {
-                        this.read_from_keyboard();
-                        cx.notify();
-                    })))
-                    .child(button("apply", "Apply to keyboard").on_click(cx.listener(|this, _, _, cx| {
-                        this.apply();
-                        cx.notify();
-                    }))),
+                    .justify_between()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .text_xl()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .child("AULA F75"),
+                            )
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(rgb(MUTED_FG))
+                                    .child(self.path.display().to_string()),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .child(button("save", "Save", Variant::Outline).on_click(cx.listener(
+                                |this, _, _, cx| {
+                                    this.save();
+                                    cx.notify();
+                                },
+                            )))
+                            .child(
+                                button("read", "Read from keyboard", Variant::Outline).on_click(
+                                    cx.listener(|this, _, _, cx| {
+                                        this.read_from_keyboard();
+                                        cx.notify();
+                                    }),
+                                ),
+                            )
+                            .child(button("apply", "Apply", Variant::Primary).on_click(
+                                cx.listener(|this, _, _, cx| {
+                                    this.apply();
+                                    cx.notify();
+                                }),
+                            )),
+                    ),
             )
-            .child(div().flex().gap_6().child(board).child(panel))
-            .child(div().text_sm().text_color(rgb(0x81a1c1)).child(self.status.clone()))
+            .child(
+                div()
+                    .flex()
+                    .gap_5()
+                    .child(
+                        div()
+                            .p_4()
+                            .rounded_lg()
+                            .border_1()
+                            .border_color(rgb(BORDER))
+                            .bg(rgb(CARD))
+                            .child(board),
+                    )
+                    .child(panel),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .text_sm()
+                    .text_color(rgb(MUTED_FG))
+                    .child(div().size(px(6.0)).rounded_full().bg(rgb(ACCENT)))
+                    .child(self.status.clone()),
+            )
     }
 }
 
@@ -296,7 +464,13 @@ fn main() {
             .unwrap_or_else(|| PathBuf::from("config.toml"))
     });
     Application::new().run(move |cx: &mut App| {
-        cx.open_window(WindowOptions::default(), |_, cx| cx.new(|_| Configurator::new(path)))
+        let bounds = gpui::Bounds::centered(None, gpui::size(px(1080.0), px(560.0)), cx);
+        let opts = WindowOptions {
+            window_bounds: Some(gpui::WindowBounds::Windowed(bounds)),
+            window_background: gpui::WindowBackgroundAppearance::Opaque,
+            ..Default::default()
+        };
+        cx.open_window(opts, |_, cx| cx.new(|_| Configurator::new(path)))
             .expect("open window");
         cx.activate(true);
     });

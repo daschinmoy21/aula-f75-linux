@@ -5,7 +5,7 @@ Linux tooling for the AULA F75 keyboard (USB `258a:010c`), built on
 
 - `aula-f75 <config.toml>` apply keymap + lighting
 - `aula-f75 --dump <names.toml> <out.toml>` read the keyboard's keymap/colours (backup)
-- `aula-f75-gui [config.toml]` GPUI configurator (`cargo build --features gui`): click a key, pick function/colour, Save / Read from keyboard / Apply
+- `aula-f75-gui [config.toml]` GPUI configurator (`cargo build --features gui`, dark zinc/blue UI): click a key, pick function/colour, Save / Read from keyboard / Apply
 
 Dev shell: `nix develop`. Needs a hidraw udev rule, e.g.
 `SUBSYSTEM=="hidraw", ATTRS{idVendor}=="258a", ATTRS{idProduct}=="010c", MODE="0666"`.
