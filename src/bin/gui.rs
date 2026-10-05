@@ -6,10 +6,28 @@ use gpui::{
 };
 use std::path::PathBuf;
 
-/// Matrix is column-major with 6 rows per column (light_pos = col * 6 + row).
-const ROWS: usize = 6;
-const KEY_W: f32 = 48.0;
-const KEY_H: f32 = 52.0;
+/// Key unit in px. Physical layout below is keyed by `light_pos` (matrix index).
+const U: f32 = 50.0;
+
+enum Cell {
+    Gap(f32),
+    K(usize, f32),
+}
+
+/// F75 physical layout: rows of (light_pos, width in units) with gaps.
+fn layout() -> Vec<Vec<Cell>> {
+    use Cell::{Gap, K};
+    let ks = |ps: &[usize], w: f32| -> Vec<Cell> { ps.iter().map(|&p| K(p, w)).collect() };
+    let cat = |parts: Vec<Vec<Cell>>| -> Vec<Cell> { parts.into_iter().flatten().collect() };
+    vec![
+        cat(vec![ks(&[0], 1.0), vec![Gap(1.0)], ks(&[12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78], 1.0), vec![Gap(1.0)], ks(&[84], 1.0)]),
+        cat(vec![ks(&[1, 7, 13, 19, 25, 31, 37, 43, 49, 55, 61, 67, 73], 1.0), ks(&[79], 2.0), ks(&[85], 1.0)]),
+        cat(vec![ks(&[2], 1.5), ks(&[8, 14, 20, 26, 32, 38, 44, 50, 56, 62, 68, 74], 1.0), ks(&[80], 1.5), ks(&[86], 1.0)]),
+        cat(vec![ks(&[3], 1.75), ks(&[9, 15, 21, 27, 33, 39, 45, 51, 57, 63, 69], 1.0), ks(&[81], 2.25), ks(&[87], 1.0)]),
+        cat(vec![ks(&[4], 2.25), ks(&[10, 16, 22, 28, 34, 40, 46, 52, 58, 64], 1.0), ks(&[70], 1.75), ks(&[82, 88], 1.0)]),
+        cat(vec![ks(&[5, 11, 17], 1.25), ks(&[35], 6.25), ks(&[53, 59], 1.0), vec![Gap(1.0)], ks(&[77, 83, 89], 1.0)]),
+    ]
+}
 
 /// (value, label) choices for the key-function list.
 fn choices() -> Vec<(String, String)> {
@@ -198,13 +216,36 @@ fn section(title: &str) -> gpui::Div {
 
 impl Render for Configurator {
     fn render(&mut self, _w: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let cols = self.keys.iter().map(|k| k.light_pos / ROWS).max().unwrap_or(0) + 1;
-        let board_w = cols as f32 * KEY_W;
-        let board_h = ROWS as f32 * KEY_H;
-
-        let mut board = div().relative().w(px(board_w)).h(px(board_h));
-        for (i, k) in self.keys.iter().enumerate() {
-            let (col, row) = (k.light_pos / ROWS, k.light_pos % ROWS);
+        // place keys: (key index, x, y, width) in units
+        let mut placed: Vec<(usize, f32, f32, f32)> = Vec::new();
+        let mut max_x = 0f32;
+        for (r, row) in layout().iter().enumerate() {
+            let mut x = 0.0;
+            for cell in row {
+                match cell {
+                    Cell::Gap(w) => x += w,
+                    Cell::K(lp, w) => {
+                        if let Some(i) = self.keys.iter().position(|k| k.light_pos == *lp) {
+                            placed.push((i, x, r as f32, *w));
+                        }
+                        x += w;
+                    }
+                }
+            }
+            max_x = max_x.max(x);
+        }
+        // keys the layout doesn't know about go in an extra row
+        let mut extra_x = 0.0;
+        for i in 0..self.keys.len() {
+            if !placed.iter().any(|p| p.0 == i) {
+                placed.push((i, extra_x, 6.5, 1.0));
+                extra_x += 1.0;
+            }
+        }
+        let rows = if extra_x > 0.0 { 7.5 } else { 6.0 };
+        let mut board = div().relative().w(px(max_x.max(extra_x) * U)).h(px(rows * U));
+        for (i, px_x, px_y, kw) in placed {
+            let k = &self.keys[i];
             let c = &k.color;
             let led = rgb(((c.r as u32) << 16) | ((c.g as u32) << 8) | c.b as u32);
             let label = self.label_for(&k.value).unwrap_or(&k.name).replace("滚轮", "Knob");
@@ -213,10 +254,10 @@ impl Render for Configurator {
                 div()
                     .id(("key", i))
                     .absolute()
-                    .left(px(col as f32 * KEY_W))
-                    .top(px(row as f32 * KEY_H))
-                    .w(px(KEY_W - 4.0))
-                    .h(px(KEY_H - 4.0))
+                    .left(px(px_x * U))
+                    .top(px(px_y * U))
+                    .w(px(kw * U - 4.0))
+                    .h(px(U - 4.0))
                     .rounded_md()
                     .bg(rgb(SURFACE))
                     .border_1()
@@ -432,6 +473,7 @@ impl Render for Configurator {
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .gap_5()
                     .child(
                         div()
@@ -464,7 +506,7 @@ fn main() {
             .unwrap_or_else(|| PathBuf::from("config.toml"))
     });
     Application::new().run(move |cx: &mut App| {
-        let bounds = gpui::Bounds::centered(None, gpui::size(px(1080.0), px(560.0)), cx);
+        let bounds = gpui::Bounds::centered(None, gpui::size(px(1280.0), px(600.0)), cx);
         let opts = WindowOptions {
             window_bounds: Some(gpui::WindowBounds::Windowed(bounds)),
             window_background: gpui::WindowBackgroundAppearance::Opaque,
