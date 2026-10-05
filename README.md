@@ -1,7 +1,10 @@
 # aula-f75-linux
 
-Linux tooling for the AULA F75 keyboard (USB `258a:010c`), built on
-[Nokkasiili/aula-f75-linux](https://github.com/Nokkasiili/aula-f75-linux) (HID protocol + keymap/light writer).
+Linux tooling for the AULA F75 keyboard (USB `258a:010c`).
+
+> **Credit:** this project exists because of [Nokkasiili/aula-f75-linux](https://github.com/Nokkasiili/aula-f75-linux),
+> which reverse-engineered the F75's HID protocol and wrote the original keymap/light driver that everything
+> here is built on. Thank you. See [Credits](#credits).
 
 - `aula-f75 <config.toml>` apply keymap + lighting
 - `aula-f75 --dump <names.toml> <out.toml>` read the keyboard's keymap/colours (backup)
@@ -18,3 +21,10 @@ Settings only reach the keyboard over USB, not the 2.4GHz dongle.
 - Fn+F-keys / Fn+arrows do nothing: see [docs/fn-layer-fix.md](docs/fn-layer-fix.md) (corrupted settings block, fixed with `examples/blockpatch.rs`).
 - Settings can't be changed over the 2.4GHz dongle (`3554:fa09`): it answers with a fixed stub instead of relaying the wired protocol (`examples/dongle_probe.rs`). Use the USB cable.
 - Backups of your keymap/settings go in `~/.config/aula-f75/backups/`; take one before experimenting.
+
+## Credits
+- [Nokkasiili/aula-f75-linux](https://github.com/Nokkasiili/aula-f75-linux): the original Linux driver. The HID protocol
+  (feature reports, keymap and light commands), the key/colour data model and the Finnish-ANSI sample all come from it.
+  This repo extends it with a library/CLI split, a GPUI configurator, profiles and diagnostics.
+- [xntebli/aula-f75-linux](https://github.com/xntebli/aula-f75-linux): documents running the official Windows configurator
+  under Wine; it confirmed that settings need the USB cable, not the 2.4GHz dongle.
