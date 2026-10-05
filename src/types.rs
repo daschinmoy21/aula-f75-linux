@@ -1,49 +1,43 @@
 use serde::{Deserialize, Serialize};
 
+/// Firmware light-mode ids, named by what each was observed to do on a real F75 (ids 0..=19).
+/// `ModeN` ids showed no light in testing (reactive/unused or needing other settings).
 #[repr(u16)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Effect {
     Off = 0,
-    FixedOn = 1,
+    Mode1 = 1,
     Respire = 2,
     Rainbow = 3,
     FlashAway = 4,
     Raindrops = 5,
-    RipplesShining = 6,
-    StarsTwinkle = 7,
-    RetroSnake = 8,
-    NeonStream = 9,
-    Reaction = 10,
+    GradientDrift = 6,
+    RipplesShining = 7,
+    StarsTwinkle = 8,
+    Mode9 = 9,
+    RetroSnake = 10,
     SineWave = 11,
-    RotatingWindmill = 12,
-    ColorfulWaterfall = 13,
-    Blossoming = 14,
-    SelfDefine = 15,
+    Reaction = 12,
+    Blossoming = 13,
+    Mode14 = 14,
+    ColorfulWaterfall = 15,
+    Mode16 = 16,
+    CenterBurst = 17,
+    Mode18 = 18,
+    Mode19 = 19,
 }
 
 impl TryFrom<u16> for Effect {
     type Error = ();
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
-        Ok(match value {
-            0 => Effect::Off,
-            1 => Effect::FixedOn,
-            2 => Effect::Respire,
-            3 => Effect::Rainbow,
-            4 => Effect::FlashAway,
-            5 => Effect::Raindrops,
-            6 => Effect::RipplesShining,
-            7 => Effect::StarsTwinkle,
-            8 => Effect::RetroSnake,
-            9 => Effect::NeonStream,
-            10 => Effect::Reaction,
-            11 => Effect::SineWave,
-            12 => Effect::RotatingWindmill,
-            13 => Effect::ColorfulWaterfall,
-            14 => Effect::Blossoming,
-            15 => Effect::SelfDefine,
-            _ => return Err(()),
-        })
+        use Effect::*;
+        const ALL: [Effect; 20] = [
+            Off, Mode1, Respire, Rainbow, FlashAway, Raindrops, GradientDrift, RipplesShining,
+            StarsTwinkle, Mode9, RetroSnake, SineWave, Reaction, Blossoming, Mode14,
+            ColorfulWaterfall, Mode16, CenterBurst, Mode18, Mode19,
+        ];
+        ALL.get(value as usize).copied().ok_or(())
     }
 }
 

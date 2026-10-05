@@ -1,12 +1,20 @@
 //! GPUI configurator: click a key, pick its function and colour, then apply to the keyboard.
 use aula_f75::types::{Color, Effect, Key, KeyLayer};
-use aula_f75::{DEFAULT_CONFIG, connect, parse_config, serialize_config};
-use gpui::{App, Application, Context, Window, WindowOptions, div, prelude::*, px, rgb};
+use aula_f75::{DEFAULT_CONFIG, connect, parse_config, parse_profile, serialize_profile};
+use gpui::{
+    App, Application, BoxShadow, Context, FocusHandle, Hsla, KeyDownEvent, Window, WindowOptions,
+    div, point, prelude::*, px, rgb,
+};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 /// Key unit in px. Physical layout below is keyed by `light_pos` (matrix index).
-const U: f32 = 50.0;
+const U: f32 = 54.0;
+
+const FINNISH_ANSI: &str = include_str!("../../examples/finnish-ansi.toml");
+
+/// Key-function presets: only the key codes change, per-key colours are kept.
+const LAYOUTS: [(&str, Option<&str>); 2] = [("Stock", None), ("Finnish ANSI", Some(FINNISH_ANSI))];
 
 enum Cell {
     Gap(f32),
@@ -135,23 +143,37 @@ enum Tab {
     Lighting,
 }
 
-const EFFECTS: [(Effect, &str); 16] = [
-    (Effect::FixedOn, "Fixed on"),
+/// Picker entries, indexed by firmware mode id (see `Effect`).
+const EFFECTS: [(Effect, &str); 20] = [
+    (Effect::Off, "Off"),
+    (Effect::Mode1, "Mode 1"),
     (Effect::Respire, "Respire"),
     (Effect::Rainbow, "Rainbow"),
     (Effect::FlashAway, "Flash away"),
     (Effect::Raindrops, "Raindrops"),
+    (Effect::GradientDrift, "Gradient drift"),
     (Effect::RipplesShining, "Ripples shining"),
     (Effect::StarsTwinkle, "Stars twinkle"),
+    (Effect::Mode9, "Mode 9"),
     (Effect::RetroSnake, "Retro snake"),
-    (Effect::NeonStream, "Neon stream"),
-    (Effect::Reaction, "Reaction"),
     (Effect::SineWave, "Sine wave"),
-    (Effect::RotatingWindmill, "Rotating windmill"),
-    (Effect::ColorfulWaterfall, "Colorful waterfall"),
+    (Effect::Reaction, "Reaction"),
     (Effect::Blossoming, "Blossoming"),
-    (Effect::SelfDefine, "Self-define"),
-    (Effect::Off, "Off"),
+    (Effect::Mode14, "Mode 14"),
+    (Effect::ColorfulWaterfall, "Colorful waterfall"),
+    (Effect::Mode16, "Mode 16"),
+    (Effect::CenterBurst, "Center burst"),
+    (Effect::Mode18, "Mode 18"),
+    (Effect::Mode19, "Mode 19"),
+];
+
+/// Indices into `EFFECTS`, grouped for the picker.
+const EFFECT_GROUPS: [(&str, &[usize]); 5] = [
+    ("Basic", &[0]),
+    ("Flowing", &[2, 3, 6, 11, 13, 15, 17]),
+    ("Animated", &[5, 8, 10]),
+    ("Reactive (press keys)", &[4, 7, 12]),
+    ("Unverified (showed no light in testing)", &[1, 9, 14, 16, 18, 19]),
 ];
 
 fn hsv(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
@@ -169,6 +191,15 @@ fn hsv(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
     ((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8)
 }
 
+/// Blend two 0xRRGGBB colours (`t` = share of `b`).
+fn mix(a: u32, b: u32, t: f32) -> u32 {
+    let ch = |s: u32| {
+        let (x, y) = (((a >> s) & 0xff) as f32, ((b >> s) & 0xff) as f32);
+        ((x + (y - x) * t) as u32) << s
+    };
+    ch(16) | ch(8) | ch(0)
+}
+
 fn hash(a: i32, b: i32) -> f32 {
     let mut h = (a as u32).wrapping_mul(0x9e3779b1) ^ (b as u32).wrapping_mul(0x85ebca6b);
     h ^= h >> 15;
@@ -179,6 +210,7 @@ fn hash(a: i32, b: i32) -> f32 {
 
 /// Approximate on-screen preview of a firmware effect (not the firmware's exact animation).
 /// `x`,`y` are the key's position in layout units, `t` is seconds, `base` the key's own colour.
+/// Reactive effects animate from a simulated key press that moves around the board.
 fn preview(effect: Effect, x: f32, y: f32, t: f32, base: (u8, u8, u8)) -> (u8, u8, u8) {
     let scale = |c: (u8, u8, u8), k: f32| {
         let k = k.clamp(0.0, 1.0);
@@ -190,14 +222,70 @@ fn preview(effect: Effect, x: f32, y: f32, t: f32, base: (u8, u8, u8)) -> (u8, u
     };
     let (cx, cy) = (7.5, 2.5);
     let dist = ((x - cx).powi(2) + ((y - cy) * 1.4).powi(2)).sqrt();
+    // simulated key press: a new one every 1.8s at a pseudo-random key
+    let epoch = (t / 1.8).floor();
+    let age = t - epoch * 1.8;
+    let (px, py) = (
+        (hash(epoch as i32, 1) * 13.0).floor() + 0.5,
+        (hash(epoch as i32, 2) * 5.0).floor(),
+    );
+    let press_hue = hash(epoch as i32, 3) * 360.0;
     match effect {
-        Effect::Off => (0, 0, 0),
-        Effect::FixedOn | Effect::SelfDefine => base,
+        Effect::Off | Effect::Mode1 | Effect::Mode9 | Effect::Mode14 | Effect::Mode16
+        | Effect::Mode18 | Effect::Mode19 => (0, 0, 0),
         Effect::Respire => scale(hsv(210.0, 0.8, 1.0), 0.5 + 0.5 * (t * 2.0).sin()),
-        Effect::Rainbow => hsv(x * 22.0 + t * 90.0, 1.0, 1.0),
+        // whole board one colour, cycling
+        Effect::Rainbow => hsv(t * 50.0, 1.0, 1.0),
+        Effect::SineWave => hsv(t * 90.0, 1.0, 1.0),
+        // slow gradient drifting across the board
+        Effect::GradientDrift => hsv(x * 9.0 + t * 25.0, 1.0, 1.0),
+        // light beams out along the pressed key's row, both ways
         Effect::FlashAway => {
-            let k = ((t * 1.5).fract() < 0.5) as i32 as f32;
-            scale(hsv((t * 1.5).floor() * 60.0, 1.0, 1.0), k)
+            const PERIOD: f32 = 0.35;
+            let now = (t / PERIOD).floor();
+            let mut best = (0.0f32, 0.0f32); // (brightness, hue)
+            for back in 0..3 {
+                let e = (now - back as f32) as i32;
+                let (kx, ky) = (
+                    (hash(e, 21) * 13.0).floor() + 0.5,
+                    (hash(e, 22) * 5.0).floor(),
+                );
+                if (y - ky).abs() < 0.5 {
+                    let a = t - e as f32 * PERIOD;
+                    let (d, front) = ((x - kx).abs(), a * 22.0);
+                    let k = if d <= front { 1.0 - (front - d) / 4.0 } else { 0.0 };
+                    let k = k.clamp(0.0, 1.0) * (1.0 - a / 1.0).max(0.0);
+                    if k > best.0 {
+                        best = (k, hash(e, 23) * 360.0);
+                    }
+                }
+            }
+            scale(hsv(best.1, 1.0, 1.0), best.0)
+        }
+        // circular ring expanding from the pressed key
+        Effect::RipplesShining => {
+            let d = ((x - px).powi(2) + ((y - py) * 1.1).powi(2)).sqrt();
+            let k = 1.0 - (d - age * 9.0).abs() * 0.55;
+            scale(hsv(press_hue + d * 18.0, 0.9, 1.0), k * (1.2 - age / 1.8))
+        }
+        // only the pressed key lights, in its own colour
+        Effect::Reaction => {
+            // quick typing: a new press every 0.3s, the last few still fading
+            const PERIOD: f32 = 0.3;
+            let now = (t / PERIOD).floor();
+            let mut k = 0.0f32;
+            for back in 0..4 {
+                let e = (now - back as f32) as i32;
+                let (kx, ky) = (
+                    (hash(e, 11) * 13.0).floor() + 0.5,
+                    (hash(e, 12) * 5.0).floor(),
+                );
+                if (x - kx).abs() < 0.6 && (y - ky).abs() < 0.5 {
+                    let a = t - e as f32 * PERIOD;
+                    k = k.max(1.0 - a / 0.9);
+                }
+            }
+            scale(base, k)
         }
         Effect::Raindrops => {
             let tt = t * 3.0 + y * 0.7;
@@ -207,16 +295,11 @@ fn preview(effect: Effect, x: f32, y: f32, t: f32, base: (u8, u8, u8)) -> (u8, u
                 if h > 0.8 { 1.0 - tt.fract() } else { 0.05 },
             )
         }
-        Effect::RipplesShining => {
-            let d = (dist - (t * 4.0) % 12.0).abs();
-            scale(hsv(180.0 + dist * 12.0, 0.8, 1.0), 1.0 - d * 0.6)
-        }
+        // random keys light up in random colours
         Effect::StarsTwinkle => {
-            let h = hash(
-                x as i32 * 7 + y as i32,
-                (t * 1.5 + hash(x as i32, y as i32) * 6.0) as i32,
-            );
-            scale((255, 255, 255), if h > 0.75 { 1.0 } else { 0.05 })
+            let slot = (t * 2.0 + hash(x as i32, y as i32) * 4.0) as i32;
+            let h = hash(x as i32 * 7 + y as i32, slot);
+            scale(hsv(h * 360.0 * 3.0, 1.0, 1.0), if h > 0.6 { 1.0 } else { 0.0 })
         }
         Effect::RetroSnake => {
             let idx = (y as i32 * 16
@@ -236,34 +319,14 @@ fn preview(effect: Effect, x: f32, y: f32, t: f32, base: (u8, u8, u8)) -> (u8, u
                 },
             )
         }
-        Effect::NeonStream => hsv(
-            x * 25.0 - t * 140.0,
-            1.0,
-            if ((x - t * 5.0) as i32) % 3 == 0 {
-                1.0
-            } else {
-                0.35
-            },
-        ),
-        Effect::Reaction => {
-            let h = hash(x as i32, y as i32);
-            let k = ((t * 0.8 + h * 5.0) % 3.0 / 3.0).min(1.0);
-            scale(hsv(30.0, 0.9, 1.0), 1.0 - k * 1.3)
-        }
-        Effect::SineWave => scale(
-            hsv(190.0, 0.9, 1.0),
-            0.5 + 0.5 * (x * 0.6 + y * 0.5 - t * 3.0).sin(),
-        ),
-        Effect::RotatingWindmill => {
-            let a = (y - cy).atan2(x - cx).to_degrees();
-            hsv(a * 2.0 + t * 120.0, 1.0, 1.0)
-        }
         Effect::ColorfulWaterfall => hsv(y * 55.0 - t * 110.0 + x * 6.0, 1.0, 1.0),
         Effect::Blossoming => hsv(
             dist * 30.0 - t * 80.0,
             0.9,
             0.5 + 0.5 * (dist * 0.9 - t * 4.0).sin(),
         ),
+        // solid gradient radiating from the centre
+        Effect::CenterBurst => hsv(dist * 30.0 - t * 90.0, 1.0, 1.0),
     }
 }
 
@@ -280,10 +343,39 @@ struct Configurator {
     effect_dirty: bool,
     custom: Vec<u32>,
     orig_keys: Vec<Key>,
+    connected: bool,
+    layout: Option<usize>,
+    profiles: Vec<String>,
+    active_profile: Option<String>,
+    /// Name being typed for a new profile (None = not naming).
+    naming: Option<String>,
+    name_focus: FocusHandle,
+}
+
+/// Where named profiles live, next to the default config file.
+fn profiles_dir(config: &std::path::Path) -> PathBuf {
+    config
+        .parent()
+        .map(|p| p.join("profiles"))
+        .unwrap_or_else(|| PathBuf::from("profiles"))
+}
+
+fn list_profiles(dir: &std::path::Path) -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let p = e.path();
+            (p.extension()? == "toml").then(|| p.file_stem()?.to_str().map(str::to_owned))?
+        })
+        .collect();
+    v.sort();
+    v
 }
 
 impl Configurator {
-    fn new(path: PathBuf) -> Self {
+    fn new(path: PathBuf, cx: &mut Context<Self>) -> Self {
         let (keys, status) = match std::fs::read_to_string(&path).map(|s| parse_config(&s)) {
             Ok(Ok(k)) => (k, format!("Loaded {}", path.display())),
             _ => (
@@ -292,6 +384,12 @@ impl Configurator {
             ),
         };
         let mut s = Self {
+            connected: false,
+            layout: None,
+            profiles: list_profiles(&profiles_dir(&path)),
+            active_profile: None,
+            naming: None,
+            name_focus: cx.focus_handle(),
             keys,
             selected: None,
             path,
@@ -303,7 +401,7 @@ impl Configurator {
             } else {
                 Tab::Keys
             },
-            effect: Effect::FixedOn,
+            effect: Effect::Off,
             started: Instant::now(),
             effect_dirty: false,
             custom: Vec::new(),
@@ -357,8 +455,10 @@ impl Configurator {
     fn refresh_device(&mut self) {
         let Ok(d) = connect() else {
             self.battery = None;
+            self.connected = false;
             return;
         };
+        self.connected = true;
         self.battery = d.fetch_battery().ok().map(|b| (b.level, b.charging));
         if !self.effect_dirty {
             if let Ok(info) = d.get_basic_info() {
@@ -367,16 +467,126 @@ impl Configurator {
         }
     }
 
+    /// File that Save/Reload act on: the active profile, else the default config.
+    fn current_path(&self) -> PathBuf {
+        match &self.active_profile {
+            Some(n) => profiles_dir(&self.path).join(format!("{n}.toml")),
+            None => self.path.clone(),
+        }
+    }
+
+    fn write_to(&self, path: &std::path::Path) -> anyhow::Result<()> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let s = serialize_profile(&self.keys, Some(self.effect as u16))?;
+        Ok(std::fs::write(path, s)?)
+    }
+
     fn save(&mut self) {
-        self.status = match serialize_config(&self.keys).and_then(|s| {
-            if let Some(dir) = self.path.parent() {
-                std::fs::create_dir_all(dir)?;
-            }
-            Ok(std::fs::write(&self.path, s)?)
-        }) {
-            Ok(()) => format!("Saved {}", self.path.display()),
+        let path = self.current_path();
+        self.status = match self.write_to(&path) {
+            Ok(()) => format!("Saved {}", path.display()),
             Err(e) => format!("Save failed: {e}"),
         };
+    }
+
+    /// Discard unsaved edits: re-read the current file from disk and re-check the keyboard.
+    fn reload(&mut self) {
+        let path = self.current_path();
+        self.refresh_profiles();
+        match std::fs::read_to_string(&path)
+            .map_err(anyhow::Error::from)
+            .and_then(|s| parse_profile(&s))
+        {
+            Ok(p) => {
+                self.keys = p.keys;
+                self.orig_keys = self.keys.clone();
+                if let Some(e) = p.effect.and_then(|e| Effect::try_from(e).ok()) {
+                    self.effect = e;
+                    self.effect_dirty = false;
+                }
+                self.selected = None;
+                self.refresh_device();
+                self.status = format!("Reloaded {}", path.display());
+            }
+            Err(e) => {
+                self.refresh_device();
+                self.status = format!("Reload failed ({}): {e}", path.display());
+            }
+        }
+    }
+
+    fn refresh_profiles(&mut self) {
+        self.profiles = list_profiles(&profiles_dir(&self.path));
+    }
+
+    fn load_profile(&mut self, name: &str) {
+        let path = profiles_dir(&self.path).join(format!("{name}.toml"));
+        match std::fs::read_to_string(&path)
+            .map_err(anyhow::Error::from)
+            .and_then(|s| parse_profile(&s))
+        {
+            Ok(p) => {
+                self.keys = p.keys;
+                if let Some(e) = p.effect.and_then(|e| Effect::try_from(e).ok()) {
+                    self.effect = e;
+                    self.effect_dirty = true;
+                }
+                // everything differs from the keyboard until applied
+                self.orig_keys.clear();
+                self.active_profile = Some(name.to_string());
+                self.selected = None;
+                self.status = format!("Loaded profile \"{name}\": press Apply to send it");
+            }
+            Err(e) => self.status = format!("Could not load profile \"{name}\": {e}"),
+        }
+    }
+
+    fn create_profile(&mut self, raw: &str) {
+        let name: String = raw
+            .trim()
+            .chars()
+            .filter(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_'))
+            .collect();
+        let name = if name.is_empty() {
+            format!("Profile {}", self.profiles.len() + 1)
+        } else {
+            name
+        };
+        let path = profiles_dir(&self.path).join(format!("{name}.toml"));
+        self.status = match self.write_to(&path) {
+            Ok(()) => {
+                self.active_profile = Some(name.clone());
+                self.refresh_profiles();
+                format!("Saved profile \"{name}\"")
+            }
+            Err(e) => format!("Could not save profile: {e}"),
+        };
+    }
+
+    fn delete_profile(&mut self) {
+        let Some(name) = self.active_profile.take() else {
+            return;
+        };
+        let path = profiles_dir(&self.path).join(format!("{name}.toml"));
+        self.status = match std::fs::remove_file(&path) {
+            Ok(()) => format!("Deleted profile \"{name}\""),
+            Err(e) => format!("Could not delete profile: {e}"),
+        };
+        self.refresh_profiles();
+    }
+
+    /// Switch the key codes to a preset layout, keeping each key's colour.
+    fn apply_layout(&mut self, preset: &str) {
+        let Ok(p) = parse_config(preset) else { return };
+        for k in &mut self.keys {
+            if let Some(src) = p.iter().find(|s| s.light_pos == k.light_pos) {
+                k.value = src.value.clone();
+                k.name = src.name.clone();
+            }
+        }
+        self.status = "Layout changed: press Apply to send it".into();
     }
 
     /// Write only what was edited: key codes, per-key colours and/or the lighting effect.
@@ -460,18 +670,22 @@ const ACCENT_HOVER: u32 = 0x2563eb;
 #[derive(Clone, Copy, PartialEq)]
 enum Variant {
     Primary,
-    Outline,
+    Blue,
+    Green,
+    Amber,
 }
 
 fn button(id: &'static str, label: &str, variant: Variant) -> gpui::Stateful<gpui::Div> {
     let (bg, hover, fg, border) = match variant {
         Variant::Primary => (ACCENT, ACCENT_HOVER, FG, ACCENT),
-        Variant::Outline => (BG, SURFACE, FG, BORDER),
+        Variant::Blue => (0x1b2a47, 0x24375c, 0xdbeafe, 0x2f4f86),
+        Variant::Green => (0x133324, 0x1a4630, 0xdcfce7, 0x22714a),
+        Variant::Amber => (0x3a2a0d, 0x4d3910, 0xfef3c7, 0x8a6416),
     };
     div()
         .id(id)
-        .h(px(32.0))
-        .px_3()
+        .h(px(46.0))
+        .px_6()
         .flex()
         .items_center()
         .rounded_md()
@@ -479,7 +693,7 @@ fn button(id: &'static str, label: &str, variant: Variant) -> gpui::Stateful<gpu
         .border_color(rgb(border))
         .bg(rgb(bg))
         .text_color(rgb(fg))
-        .text_sm()
+        .text_base()
         .font_weight(gpui::FontWeight::MEDIUM)
         .hover(move |s| s.bg(rgb(hover)))
         .cursor_pointer()
@@ -530,24 +744,19 @@ impl Render for Configurator {
             }
             max_x = max_x.max(x);
         }
-        // keys the layout doesn't know about go in an extra row
-        let mut extra_x = 0.0;
-        for i in 0..self.keys.len() {
-            if !placed.iter().any(|p| p.0 == i) {
-                placed.push((i, extra_x, 6.5, 1.0));
-                extra_x += 1.0;
-            }
-        }
-        let rows = if extra_x > 0.0 { 7.5 } else { 6.0 };
+        // Matrix positions with no physical key on this ANSI board (e.g. the ISO `#` and `<>`
+        // slots) are kept in `self.keys` so Apply writes them back unchanged, but not drawn.
+        let rows = 6.0;
         let mut board = div()
             .relative()
-            .w(px(max_x.max(extra_x) * U))
+            .w(px(max_x * U))
             .h(px(rows * U));
+        let lighting = self.tab == Tab::Lighting;
         for (i, px_x, px_y, kw) in placed {
             let k = &self.keys[i];
             let c = &k.color;
             let base = (c.r, c.g, c.b);
-            let (lr, lg, lb) = if self.tab == Tab::Lighting {
+            let (lr, lg, lb) = if lighting {
                 preview(
                     self.effect,
                     px_x,
@@ -558,40 +767,81 @@ impl Render for Configurator {
             } else {
                 base
             };
-            let led = rgb(((lr as u32) << 16) | ((lg as u32) << 8) | lb as u32);
+            let led_val = ((lr as u32) << 16) | ((lg as u32) << 8) | lb as u32;
             let label = self
                 .label_for(&k.value)
                 .unwrap_or(&k.name)
                 .replace("滚轮", "Knob");
             let selected = self.selected == Some(i);
+            let is_knob = k.light_pos == 84;
+            let lit = lr.max(lg).max(lb) > 24;
+            // keycap face picks up a little of the LED colour while previewing lighting
+            let face = if lighting && lit {
+                mix(0x232328, led_val, 0.16)
+            } else {
+                0x232328
+            };
+            let glow: Hsla = Hsla {
+                a: if lit { 0.55 } else { 0.0 },
+                ..rgb(led_val).into()
+            };
+            let (w, h) = (kw * U - 5.0, U - 5.0);
+            let mut cap = div()
+                .id(("key", i))
+                .absolute()
+                .left(px(px_x * U + 1.0))
+                .top(px(px_y * U + 1.0))
+                .w(px(if is_knob { h } else { w }))
+                .h(px(h))
+                .rounded(px(if is_knob { h } else { 6.0 }))
+                .bg(rgb(0x0f0f12))
+                .border_1()
+                .border_color(rgb(if selected { ACCENT } else { 0x2e2e35 }))
+                .shadow(vec![BoxShadow {
+                    color: glow,
+                    offset: point(px(0.0), px(2.0)),
+                    blur_radius: px(10.0),
+                    spread_radius: px(0.0),
+                }])
+                .cursor_pointer();
+            if selected {
+                cap = cap.border_2();
+            }
             board = board.child(
-                div()
-                    .id(("key", i))
-                    .absolute()
-                    .left(px(px_x * U))
-                    .top(px(px_y * U))
-                    .w(px(kw * U - 4.0))
-                    .h(px(U - 4.0))
-                    .rounded_md()
-                    .bg(rgb(SURFACE))
-                    .border_1()
-                    .border_color(rgb(if selected { ACCENT } else { BORDER }))
-                    .text_color(rgb(if selected { FG } else { MUTED_FG }))
-                    .text_xs()
-                    .overflow_hidden()
-                    .flex()
-                    .flex_col()
-                    .justify_between()
-                    .items_center()
-                    .hover(|s| s.bg(rgb(0x1f1f23)))
-                    .cursor_pointer()
-                    .child(div().flex_1().flex().items_center().child(label))
-                    // colour "LED" strip along the bottom edge
-                    .child(div().w_full().h(px(3.0)).bg(led))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.selected = Some(i);
-                        cx.notify();
-                    })),
+                cap.child(
+                    // keycap top face, inset so the darker "sides" show around it
+                    div()
+                        .absolute()
+                        .left(px(3.0))
+                        .right(px(3.0))
+                        .top(px(2.0))
+                        .bottom(px(6.0))
+                        .rounded(px(if is_knob { 30.0 } else { 4.0 }))
+                        .bg(rgb(face))
+                        .hover(|s| s.bg(rgb(0x2c2c33)))
+                        .text_color(rgb(if selected { FG } else { 0xc4c4cc }))
+                        .text_xs()
+                        .overflow_hidden()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(label),
+                )
+                // LED underglow strip along the bottom edge
+                .child(
+                    div()
+                        .absolute()
+                        .left(px(6.0))
+                        .right(px(6.0))
+                        .bottom(px(1.0))
+                        .h(px(3.0))
+                        .rounded_full()
+                        .bg(rgb(led_val)),
+                )
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.selected = Some(i);
+                    cx.notify();
+                })),
             );
         }
 
@@ -781,55 +1031,116 @@ impl Render for Configurator {
                 .border_color(rgb(BORDER))
                 .bg(rgb(CARD))
         };
-        let board_card = card().child(board);
+        // keyboard case: outer shell, recessed plate, then the keys
+        let board_card = div()
+            .p(px(14.0))
+            .rounded(px(18.0))
+            .border_1()
+            .border_color(rgb(0x34343c))
+            .bg(rgb(0x1b1b20))
+            .shadow(vec![BoxShadow {
+                color: Hsla { h: 0.0, s: 0.0, l: 0.0, a: 0.6 },
+                offset: point(px(0.0), px(10.0)),
+                blur_radius: px(24.0),
+                spread_radius: px(0.0),
+            }])
+            .child(
+                div()
+                    .p(px(10.0))
+                    .rounded(px(10.0))
+                    .bg(rgb(0x0a0a0c))
+                    .border_1()
+                    .border_color(rgb(0x000000))
+                    .child(board),
+            );
 
-        // ---- effect list (Lighting tab, left) ----
-        let effects_card = card()
-            .w(px(220.0))
+        // ---- effect picker (Lighting tab): grouped tiles with a colour swatch ----
+        let cur_name = EFFECTS
+            .iter()
+            .find(|(e, _)| *e == self.effect)
+            .map_or("", |(_, n)| *n);
+        let mut effects_card = card()
+            .w_full()
             .flex()
             .flex_col()
-            .gap_1()
-            .child(section("Light effect"))
-            .children(EFFECTS.iter().enumerate().map(|(ei, (eff, name))| {
-                let on = self.effect == *eff;
-                let eff = *eff;
+            .gap_4()
+            .child(
                 div()
-                    .id(("effect", ei))
-                    .px_3()
-                    .py_1()
-                    .rounded_md()
-                    .text_sm()
-                    .bg(rgb(if on { SURFACE } else { CARD }))
-                    .text_color(rgb(if on { FG } else { MUTED_FG }))
-                    .border_l_2()
-                    .border_color(rgb(if on { ACCENT } else { CARD }))
-                    .hover(|s| s.bg(rgb(SURFACE)))
-                    .cursor_pointer()
-                    .child(*name)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.effect = eff;
-                        this.effect_dirty = true;
-                        cx.notify();
-                    }))
-            }));
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .child(section("Light effect"))
+                    .child(
+                        div()
+                            .text_lg()
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .child(cur_name),
+                    )
+                    .child(
+                        div()
+                            .px_2()
+                            .rounded_full()
+                            .text_xs()
+                            .text_color(rgb(if self.effect_dirty { 0xfbbf24 } else { 0x4ade80 }))
+                            .bg(rgb(if self.effect_dirty { 0x3a2a0d } else { 0x133324 }))
+                            .child(if self.effect_dirty {
+                                "not applied"
+                            } else {
+                                "on keyboard"
+                            }),
+                    ),
+            );
+        for (gi, (group, members)) in EFFECT_GROUPS.iter().enumerate() {
+            effects_card = effects_card.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(section(group))
+                    .child(div().flex().flex_wrap().gap_2().children(members.iter().map(
+                        |&ei| {
+                            let (eff, name) = EFFECTS[ei];
+                            let on = self.effect == eff;
+                            div()
+                                .id(("effect", gi * 100 + ei))
+                                .h(px(52.0))
+                                .px_5()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .rounded_lg()
+                                .border_1()
+                                .border_color(rgb(if on { ACCENT } else { BORDER }))
+                                .bg(rgb(if on { 0x16233d } else { SURFACE }))
+                                .text_base()
+                                .text_color(rgb(if on { FG } else { MUTED_FG }))
+                                .hover(|s| s.bg(rgb(if on { 0x1b2c4d } else { 0x222227 })))
+                                .cursor_pointer()
+                                .child(name)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.effect = eff;
+                                    this.effect_dirty = true;
+                                    cx.notify();
+                                }))
+                        },
+                    ))),
+            );
+        }
 
         let body = if self.tab == Tab::Lighting {
             div()
+                .flex_1()
                 .flex()
                 .flex_col()
+                .items_center()
                 .gap_5()
-                .child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .gap_5()
-                        .child(effects_card)
-                        .child(board_card),
-                )
+                .child(effects_card)
+                .child(board_card)
                 .child(
                     card()
                         .flex()
                         .flex_wrap()
+                        .justify_center()
                         .gap_8()
                         .child(colour_block)
                         .child(
@@ -837,25 +1148,27 @@ impl Render for Configurator {
                                 .max_w(px(360.0))
                                 .text_xs()
                                 .text_color(rgb(MUTED_FG))
-                                .child("Preview is an approximation of the firmware effect. Apply sends the effect to the keyboard. Per-key colours show in Self-define. Brightness and speed controls are coming once the protocol is verified."),
+                                .child("Preview is an approximation of the firmware effect. Apply sends the effect to the keyboard. Brightness and speed controls are coming once the protocol is verified."),
                         ),
                 )
         } else {
-            let mut side = card()
-                .w(px(300.0))
-                .flex()
-                .flex_col()
-                .gap_4()
-                .child(colour_block);
-            if let Some(f) = function_block {
-                side = side.child(f);
-            }
-            div()
+            let mut editor = card()
                 .flex()
                 .flex_wrap()
+                .justify_center()
+                .gap_8()
+                .child(colour_block);
+            if let Some(f) = function_block {
+                editor = editor.child(div().w(px(300.0)).child(f));
+            }
+            div()
+                .flex_1()
+                .flex()
+                .flex_col()
+                .items_center()
                 .gap_5()
                 .child(board_card)
-                .child(side)
+                .child(editor)
         };
 
         div()
@@ -869,7 +1182,14 @@ impl Render for Configurator {
             .flex_col()
             .gap_5()
             .child(self.header(cx))
-            .child(body)
+            .child(
+                div()
+                    .flex()
+                    .items_start()
+                    .gap_5()
+                    .child(self.sidebar(cx))
+                    .child(body),
+            )
             .child(
                 div()
                     .flex()
@@ -938,6 +1258,30 @@ impl Configurator {
                     .gap_3()
                     .child(
                         div()
+                            .id("conn")
+                            .h(px(32.0))
+                            .px_3()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .rounded_md()
+                            .border_1()
+                            .border_color(rgb(BORDER))
+                            .text_sm()
+                            .text_color(rgb(MUTED_FG))
+                            .hover(|s| s.bg(rgb(SURFACE)))
+                            .cursor_pointer()
+                            .child(div().size(px(8.0)).rounded_full().bg(rgb(
+                                if self.connected { 0x22c55e } else { 0x71717a },
+                            )))
+                            .child(if self.connected { "Connected (USB)" } else { "Not connected" })
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.refresh_device();
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
                             .id("battery")
                             .h(px(32.0))
                             .px_3()
@@ -966,7 +1310,15 @@ impl Configurator {
                             .flex()
                             .gap_2()
                             .child(
-                                button("save", "Save", Variant::Outline).on_click(cx.listener(
+                                button("reload", "Reload", Variant::Blue).on_click(cx.listener(
+                                    |this, _, _, cx| {
+                                        this.reload();
+                                        cx.notify();
+                                    },
+                                )),
+                            )
+                            .child(
+                                button("save", "Save", Variant::Green).on_click(cx.listener(
                                     |this, _, _, cx| {
                                         this.save();
                                         cx.notify();
@@ -974,7 +1326,7 @@ impl Configurator {
                                 )),
                             )
                             .child(
-                                button("read", "Read from keyboard", Variant::Outline).on_click(
+                                button("read", "Read from keyboard", Variant::Amber).on_click(
                                     cx.listener(|this, _, _, cx| {
                                         this.read_from_keyboard();
                                         cx.notify();
@@ -989,6 +1341,142 @@ impl Configurator {
                             )),
                     ),
             )
+    }
+
+    /// Full-width list row used by the sidebar (profiles, layouts).
+    fn item(id: (&'static str, usize), label: &str, on: bool) -> gpui::Stateful<gpui::Div> {
+        div()
+            .id(id)
+            .w_full()
+            .px_3()
+            .py_2()
+            .rounded_md()
+            .text_base()
+            .bg(rgb(if on { SURFACE } else { CARD }))
+            .text_color(rgb(if on { FG } else { MUTED_FG }))
+            .border_l_2()
+            .border_color(rgb(if on { ACCENT } else { CARD }))
+            .hover(|s| s.bg(rgb(SURFACE)))
+            .cursor_pointer()
+            .child(label.to_string())
+    }
+
+    /// Left sidebar: profile list, and (Keys tab) the key-layout presets.
+    fn sidebar(&self, cx: &mut Context<Self>) -> gpui::Div {
+        let mut profiles = div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(section("Profiles"))
+            .child(
+                Self::item(("profile", usize::MAX), "Default", self.active_profile.is_none())
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.active_profile = None;
+                        this.reload();
+                        cx.notify();
+                    })),
+            )
+            .children(self.profiles.iter().enumerate().map(|(pi, name)| {
+                let n = name.clone();
+                Self::item(("profile", pi), name, self.active_profile.as_deref() == Some(name))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.load_profile(&n);
+                        cx.notify();
+                    }))
+            }));
+        profiles = match &self.naming {
+            Some(text) => profiles.child(
+                div()
+                    .id("profile-name")
+                    .track_focus(&self.name_focus)
+                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
+                        let Some(text) = this.naming.as_mut() else {
+                            return;
+                        };
+                        match ev.keystroke.key.as_str() {
+                            "enter" => {
+                                let name = this.naming.take().unwrap_or_default();
+                                this.create_profile(&name);
+                            }
+                            "escape" => this.naming = None,
+                            "backspace" => {
+                                text.pop();
+                            }
+                            _ => {
+                                if let Some(c) = &ev.keystroke.key_char {
+                                    if !ev.keystroke.modifiers.control {
+                                        text.push_str(c);
+                                    }
+                                }
+                            }
+                        }
+                        cx.notify();
+                    }))
+                    .w_full()
+                    .px_3()
+                    .py_1()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(rgb(ACCENT))
+                    .text_sm()
+                    .child(if text.is_empty() {
+                        "Name, then Enter…".to_string()
+                    } else {
+                        format!("{text}|")
+                    }),
+            ),
+            None => profiles.child(
+                Self::item(("profile-new", 0), "+ New profile", false).on_click(cx.listener(
+                    |this, _, window, cx| {
+                        this.naming = Some(String::new());
+                        window.focus(&this.name_focus);
+                        cx.notify();
+                    },
+                )),
+            ),
+        };
+        if self.active_profile.is_some() {
+            profiles = profiles.child(
+                Self::item(("profile-del", 0), "Delete this profile", false).on_click(
+                    cx.listener(|this, _, _, cx| {
+                        this.delete_profile();
+                        cx.notify();
+                    }),
+                ),
+            );
+        }
+        let mut side = div()
+            .w(px(210.0))
+            .flex_none()
+            .p_4()
+            .rounded_lg()
+            .border_1()
+            .border_color(rgb(BORDER))
+            .bg(rgb(CARD))
+            .flex()
+            .flex_col()
+            .gap_5()
+            .child(profiles);
+        if self.tab == Tab::Keys {
+            side = side.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(section("Layout"))
+                    .children(LAYOUTS.iter().enumerate().map(|(li, (name, preset))| {
+                        let preset = preset.unwrap_or(DEFAULT_CONFIG);
+                        Self::item(("layout", li), name, self.layout == Some(li)).on_click(
+                            cx.listener(move |this, _, _, cx| {
+                                this.layout = Some(li);
+                                this.apply_layout(preset);
+                                cx.notify();
+                            }),
+                        )
+                    })),
+            );
+        }
+        side
     }
 
     /// Clickable segmented slider: `value` and `max` are segment indices.
@@ -1027,7 +1515,7 @@ fn main() {
                 .unwrap_or_else(|| PathBuf::from("config.toml"))
         });
     Application::new().run(move |cx: &mut App| {
-        let bounds = gpui::Bounds::centered(None, gpui::size(px(1280.0), px(600.0)), cx);
+        let bounds = gpui::Bounds::centered(None, gpui::size(px(1280.0), px(760.0)), cx);
         let opts = WindowOptions {
             window_bounds: Some(gpui::WindowBounds::Windowed(bounds)),
             window_background: gpui::WindowBackgroundAppearance::Opaque,
@@ -1051,7 +1539,7 @@ fn main() {
                     }
                 })
                 .detach();
-                Configurator::new(path)
+                Configurator::new(path, cx)
             })
         })
         .expect("open window");

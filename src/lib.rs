@@ -13,17 +13,27 @@ pub const DEFAULT_CONFIG: &str = include_str!("../data/default.toml");
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct KeysWrapper {
     pub keys: Vec<Key>,
+    /// Lighting effect id (profiles only; absent in plain keymap files).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<u16>,
 }
 
 pub fn parse_config(s: &str) -> Result<Vec<Key>> {
-    Ok(toml::from_str::<KeysWrapper>(s)
-        .context("Failed to parse config")?
-        .keys)
+    Ok(parse_profile(s)?.keys)
+}
+
+pub fn parse_profile(s: &str) -> Result<KeysWrapper> {
+    toml::from_str::<KeysWrapper>(s).context("Failed to parse config")
 }
 
 pub fn serialize_config(keys: &[Key]) -> Result<String> {
+    serialize_profile(keys, None)
+}
+
+pub fn serialize_profile(keys: &[Key], effect: Option<u16>) -> Result<String> {
     Ok(toml::to_string_pretty(&KeysWrapper {
         keys: keys.to_vec(),
+        effect,
     })?)
 }
 
