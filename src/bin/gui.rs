@@ -278,6 +278,7 @@ struct Configurator {
     effect: Effect,
     started: Instant,
     effect_dirty: bool,
+    custom: Vec<u32>,
     orig_keys: Vec<Key>,
 }
 
@@ -305,6 +306,7 @@ impl Configurator {
             effect: Effect::FixedOn,
             started: Instant::now(),
             effect_dirty: false,
+            custom: Vec::new(),
             orig_keys: Vec::new(),
         };
         s.orig_keys = s.keys.clone();
@@ -323,6 +325,18 @@ impl Configurator {
         if let Some(i) = self.selected {
             let (r, g, b) = ((rgb_val >> 16) as u8, (rgb_val >> 8) as u8, rgb_val as u8);
             self.keys[i].color = Color::create(r, g, b);
+        }
+    }
+
+    fn set_channel(&mut self, ch: usize, v: u8) {
+        if let Some(i) = self.selected {
+            let c = &mut self.keys[i].color;
+            let (r, g, b) = match ch {
+                0 => (v, c.g, c.b),
+                1 => (c.r, v, c.b),
+                _ => (c.r, c.g, v),
+            };
+            *c = Color::create(r, g, b);
         }
     }
 
@@ -581,58 +595,131 @@ impl Render for Configurator {
             );
         }
 
-        let mut panel = div()
-            .w(px(300.0))
-            .p_4()
-            .flex()
-            .flex_col()
-            .gap_3()
-            .rounded_lg()
-            .border_1()
-            .border_color(rgb(BORDER))
-            .bg(rgb(CARD));
+        let sel_color = self.selected.map(|i| {
+            let c = &self.keys[i].color;
+            (c.r, c.g, c.b)
+        });
 
-        if self.tab == Tab::Lighting {
-            panel = panel
-                .child(section("Effect"))
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .children(EFFECTS.iter().enumerate().map(|(ei, (eff, name))| {
-                            let on = self.effect == *eff;
-                            let eff = *eff;
+        // ---- colour editor (selected key) ----
+        let colour_block = {
+            let mut b = div().flex().flex_col().gap_3().min_w(px(280.0));
+            match sel_color {
+                None => {
+                    b = b.child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(MUTED_FG))
+                            .child("Select a key to edit its colour."),
+                    );
+                }
+                Some((r, g, bl)) => {
+                    let cur = ((r as u32) << 16) | ((g as u32) << 8) | bl as u32;
+                    let swatch = |id: &'static str, i: usize, p: u32, on: bool| {
+                        div()
+                            .id((id, i))
+                            .size(px(22.0))
+                            .rounded_full()
+                            .bg(rgb(p))
+                            .border_2()
+                            .border_color(rgb(if on { ACCENT } else { BORDER }))
+                            .cursor_pointer()
+                    };
+                    b = b
+                        .child(
                             div()
-                                .id(("effect", ei))
-                                .px_3()
-                                .py_1()
-                                .rounded_md()
-                                .border_1()
-                                .border_color(rgb(if on { ACCENT } else { BORDER }))
-                                .bg(rgb(if on { SURFACE } else { CARD }))
-                                .text_sm()
-                                .text_color(rgb(if on { FG } else { MUTED_FG }))
-                                .hover(|s| s.bg(rgb(SURFACE)))
-                                .cursor_pointer()
-                                .child(*name)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.effect = eff;
-                                    this.effect_dirty = true;
-                                    cx.notify();
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .size(px(28.0))
+                                        .rounded_md()
+                                        .bg(rgb(cur))
+                                        .border_1()
+                                        .border_color(rgb(BORDER)),
+                                )
+                                .child(
+                                    div()
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .child(format!("#{cur:06X}")),
+                                ),
+                        )
+                        .children(
+                            [("R", r, 0usize), ("G", g, 1), ("B", bl, 2)]
+                                .into_iter()
+                                .map(|(name, val, ch)| {
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .text_sm()
+                                        .child(
+                                            div().w(px(14.0)).text_color(rgb(MUTED_FG)).child(name),
+                                        )
+                                        .child(self.slider(
+                                            cx,
+                                            ["sr", "sg", "sb"][ch],
+                                            val as usize * 31 / 255,
+                                            31,
+                                            move |this, s| {
+                                                this.set_channel(ch, (s * 255 / 31) as u8);
+                                            },
+                                        ))
+                                        .child(
+                                            div()
+                                                .w(px(30.0))
+                                                .text_xs()
+                                                .text_color(rgb(MUTED_FG))
+                                                .child(val.to_string()),
+                                        )
+                                }),
+                        )
+                        .child(div().flex().flex_wrap().gap_2().children(
+                            PALETTE.iter().enumerate().map(|(i, &p)| {
+                                swatch("sw", i, p, cur == p).on_click(cx.listener(
+                                    move |this, _, _, cx| {
+                                        this.set_color(p);
+                                        cx.notify();
+                                    },
+                                ))
+                            }),
+                        ))
+                        .child(section("Custom colours"))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .gap_2()
+                                .items_center()
+                                .children(self.custom.iter().enumerate().map(|(i, &p)| {
+                                    swatch("cu", i, p, cur == p).on_click(cx.listener(
+                                        move |this, _, _, cx| {
+                                            this.set_color(p);
+                                            cx.notify();
+                                        },
+                                    ))
                                 }))
-                        })),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(MUTED_FG))
-                        .child("Preview is an approximation. Apply sends the effect to the keyboard. Per-key colours show in Self-define."),
-                );
-        } else if let Some(i) = self.selected {
+                                .child(small_button(("add", 0), "+").on_click(cx.listener(
+                                    move |this, _, _, cx| {
+                                        if !this.custom.contains(&cur) && this.custom.len() < 10 {
+                                            this.custom.push(cur);
+                                        }
+                                        cx.notify();
+                                    },
+                                ))),
+                        );
+                }
+            }
+            b
+        };
+
+        // ---- key function list ----
+        let function_block = self.selected.map(|i| {
             let k = &self.keys[i];
-            let c = &k.color;
-            panel = panel
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
                 .child(
                     div()
                         .flex()
@@ -649,76 +736,6 @@ impl Render for Configurator {
                                 .text_color(rgb(MUTED_FG))
                                 .child(k.value.clone()),
                         ),
-                )
-                .child(section("Colour"))
-                .child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .gap_2()
-                        .children(PALETTE.iter().map(|&p| {
-                            let on = ((c.r as u32) << 16 | (c.g as u32) << 8 | c.b as u32) == p;
-                            div()
-                                .id(("sw", p as usize))
-                                .size(px(22.0))
-                                .rounded_full()
-                                .bg(rgb(p))
-                                .border_2()
-                                .border_color(rgb(if on { ACCENT } else { BORDER }))
-                                .cursor_pointer()
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.set_color(p);
-                                    cx.notify();
-                                }))
-                        })),
-                )
-                .child(
-                    div().flex().flex_col().gap_1().children(
-                        [("R", c.r), ("G", c.g), ("B", c.b)]
-                            .into_iter()
-                            .enumerate()
-                            .map(|(ch, (name, val))| {
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .text_sm()
-                                    .child(div().w(px(14.0)).text_color(rgb(MUTED_FG)).child(name))
-                                    .child(small_button((["r-", "g-", "b-"][ch], 0), "−").on_click(
-                                        cx.listener(move |this, _, _, cx| {
-                                            this.nudge(ch, -16);
-                                            cx.notify();
-                                        }),
-                                    ))
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .h(px(4.0))
-                                            .rounded_full()
-                                            .bg(rgb(SURFACE))
-                                            .child(
-                                                div()
-                                                    .h_full()
-                                                    .rounded_full()
-                                                    .bg(rgb(ACCENT))
-                                                    .w(gpui::relative(val as f32 / 255.0)),
-                                            ),
-                                    )
-                                    .child(small_button((["r+", "g+", "b+"][ch], 0), "+").on_click(
-                                        cx.listener(move |this, _, _, cx| {
-                                            this.nudge(ch, 16);
-                                            cx.notify();
-                                        }),
-                                    ))
-                                    .child(
-                                        div()
-                                            .w(px(28.0))
-                                            .text_xs()
-                                            .text_color(rgb(MUTED_FG))
-                                            .child(val.to_string()),
-                                    )
-                            }),
-                    ),
                 )
                 .child(section("Function"))
                 .child(
@@ -753,143 +770,106 @@ impl Render for Configurator {
                                     }
                                 }))
                         })),
-                );
-        } else {
-            panel = panel.child(
+                )
+        });
+
+        let card = || {
+            div()
+                .p_4()
+                .rounded_lg()
+                .border_1()
+                .border_color(rgb(BORDER))
+                .bg(rgb(CARD))
+        };
+        let board_card = card().child(board);
+
+        // ---- effect list (Lighting tab, left) ----
+        let effects_card = card()
+            .w(px(220.0))
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(section("Light effect"))
+            .children(EFFECTS.iter().enumerate().map(|(ei, (eff, name))| {
+                let on = self.effect == *eff;
+                let eff = *eff;
                 div()
+                    .id(("effect", ei))
+                    .px_3()
+                    .py_1()
+                    .rounded_md()
                     .text_sm()
-                    .text_color(rgb(MUTED_FG))
-                    .child("Select a key to edit its colour and function."),
-            );
-        }
+                    .bg(rgb(if on { SURFACE } else { CARD }))
+                    .text_color(rgb(if on { FG } else { MUTED_FG }))
+                    .border_l_2()
+                    .border_color(rgb(if on { ACCENT } else { CARD }))
+                    .hover(|s| s.bg(rgb(SURFACE)))
+                    .cursor_pointer()
+                    .child(*name)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.effect = eff;
+                        this.effect_dirty = true;
+                        cx.notify();
+                    }))
+            }));
+
+        let body = if self.tab == Tab::Lighting {
+            div()
+                .flex()
+                .flex_col()
+                .gap_5()
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap_5()
+                        .child(effects_card)
+                        .child(board_card),
+                )
+                .child(
+                    card()
+                        .flex()
+                        .flex_wrap()
+                        .gap_8()
+                        .child(colour_block)
+                        .child(
+                            div()
+                                .max_w(px(360.0))
+                                .text_xs()
+                                .text_color(rgb(MUTED_FG))
+                                .child("Preview is an approximation of the firmware effect. Apply sends the effect to the keyboard. Per-key colours show in Self-define. Brightness and speed controls are coming once the protocol is verified."),
+                        ),
+                )
+        } else {
+            let mut side = card()
+                .w(px(300.0))
+                .flex()
+                .flex_col()
+                .gap_4()
+                .child(colour_block);
+            if let Some(f) = function_block {
+                side = side.child(f);
+            }
+            div()
+                .flex()
+                .flex_wrap()
+                .gap_5()
+                .child(board_card)
+                .child(side)
+        };
 
         div()
+            .id("root")
             .size_full()
+            .overflow_y_scroll()
             .bg(rgb(BG))
             .text_color(rgb(FG))
             .p_6()
             .flex()
             .flex_col()
             .gap_5()
-            .child(
-                div()
-                    .flex()
-                    .justify_between()
-                    .items_center()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .text_xl()
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .child("AULA F75"),
-                            )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(rgb(MUTED_FG))
-                                    .child(self.path.display().to_string()),
-                            )
-                            .child(
-                                div().flex().gap_1().mt_2().children(
-                                    [(Tab::Keys, "Keys"), (Tab::Lighting, "Lighting")]
-                                        .into_iter()
-                                        .enumerate()
-                                        .map(|(ti, (tab, name))| {
-                                            let on = self.tab == tab;
-                                            div()
-                                                .id(("tab", ti))
-                                                .px_3()
-                                                .py_1()
-                                                .rounded_md()
-                                                .text_sm()
-                                                .bg(rgb(if on { SURFACE } else { BG }))
-                                                .text_color(rgb(if on { FG } else { MUTED_FG }))
-                                                .hover(|s| s.bg(rgb(SURFACE)))
-                                                .cursor_pointer()
-                                                .child(name)
-                                                .on_click(cx.listener(move |this, _, _, cx| {
-                                                    this.tab = tab;
-                                                    cx.notify();
-                                                }))
-                                        }),
-                                ),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_3()
-                            .child(
-                                div()
-                                    .id("battery")
-                                    .h(px(32.0))
-                                    .px_3()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .rounded_md()
-                                    .border_1()
-                                    .border_color(rgb(BORDER))
-                                    .text_sm()
-                                    .text_color(rgb(MUTED_FG))
-                                    .hover(|s| s.bg(rgb(SURFACE)))
-                                    .cursor_pointer()
-                                    .child(match self.battery {
-                                        Some((lvl, true)) => format!("\u{26a1} {lvl}%"),
-                                        Some((lvl, false)) => format!("Battery {lvl}%"),
-                                        None => "Battery n/a".to_string(),
-                                    })
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.refresh_device();
-                                        cx.notify();
-                                    })),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .gap_2()
-                                    .child(button("save", "Save", Variant::Outline).on_click(
-                                        cx.listener(|this, _, _, cx| {
-                                            this.save();
-                                            cx.notify();
-                                        }),
-                                    ))
-                                    .child(
-                                        button("read", "Read from keyboard", Variant::Outline)
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.read_from_keyboard();
-                                                cx.notify();
-                                            })),
-                                    )
-                                    .child(button("apply", "Apply", Variant::Primary).on_click(
-                                        cx.listener(|this, _, _, cx| {
-                                            this.apply();
-                                            cx.notify();
-                                        }),
-                                    )),
-                            ),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_5()
-                    .child(
-                        div()
-                            .p_4()
-                            .rounded_lg()
-                            .border_1()
-                            .border_color(rgb(BORDER))
-                            .bg(rgb(CARD))
-                            .child(board),
-                    )
-                    .child(panel),
-            )
+            .child(self.header(cx))
+            .child(body)
             .child(
                 div()
                     .flex()
@@ -900,6 +880,140 @@ impl Render for Configurator {
                     .child(div().size(px(6.0)).rounded_full().bg(rgb(ACCENT)))
                     .child(self.status.clone()),
             )
+    }
+}
+
+impl Configurator {
+    fn header(&self, cx: &mut Context<Self>) -> gpui::Div {
+        div()
+            .flex()
+            .justify_between()
+            .items_center()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .text_xl()
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .child("AULA F75"),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(MUTED_FG))
+                            .child(self.path.display().to_string()),
+                    )
+                    .child(
+                        div().flex().gap_1().mt_2().children(
+                            [(Tab::Keys, "Keys"), (Tab::Lighting, "Lighting")]
+                                .into_iter()
+                                .enumerate()
+                                .map(|(ti, (tab, name))| {
+                                    let on = self.tab == tab;
+                                    div()
+                                        .id(("tab", ti))
+                                        .px_3()
+                                        .py_1()
+                                        .rounded_md()
+                                        .text_sm()
+                                        .bg(rgb(if on { SURFACE } else { BG }))
+                                        .text_color(rgb(if on { FG } else { MUTED_FG }))
+                                        .hover(|s| s.bg(rgb(SURFACE)))
+                                        .cursor_pointer()
+                                        .child(name)
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.tab = tab;
+                                            cx.notify();
+                                        }))
+                                }),
+                        ),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .child(
+                        div()
+                            .id("battery")
+                            .h(px(32.0))
+                            .px_3()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .rounded_md()
+                            .border_1()
+                            .border_color(rgb(BORDER))
+                            .text_sm()
+                            .text_color(rgb(MUTED_FG))
+                            .hover(|s| s.bg(rgb(SURFACE)))
+                            .cursor_pointer()
+                            .child(match self.battery {
+                                Some((lvl, true)) => format!("\u{26a1} {lvl}%"),
+                                Some((lvl, false)) => format!("Battery {lvl}%"),
+                                None => "Battery n/a".to_string(),
+                            })
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.refresh_device();
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .child(
+                                button("save", "Save", Variant::Outline).on_click(cx.listener(
+                                    |this, _, _, cx| {
+                                        this.save();
+                                        cx.notify();
+                                    },
+                                )),
+                            )
+                            .child(
+                                button("read", "Read from keyboard", Variant::Outline).on_click(
+                                    cx.listener(|this, _, _, cx| {
+                                        this.read_from_keyboard();
+                                        cx.notify();
+                                    }),
+                                ),
+                            )
+                            .child(button("apply", "Apply", Variant::Primary).on_click(
+                                cx.listener(|this, _, _, cx| {
+                                    this.apply();
+                                    cx.notify();
+                                }),
+                            )),
+                    ),
+            )
+    }
+
+    /// Clickable segmented slider: `value` and `max` are segment indices.
+    fn slider(
+        &self,
+        cx: &mut Context<Self>,
+        id: &'static str,
+        value: usize,
+        max: usize,
+        on_set: impl Fn(&mut Self, usize) + Clone + 'static,
+    ) -> gpui::Div {
+        div().flex().gap(px(2.0)).children((0..=max).map(|s| {
+            let on_set = on_set.clone();
+            div()
+                .id((id, s))
+                .w(px(if max > 12 { 6.0 } else { 14.0 }))
+                .h(px(14.0))
+                .rounded_sm()
+                .bg(rgb(if s <= value { ACCENT } else { SURFACE }))
+                .cursor_pointer()
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    on_set(this, s);
+                    cx.notify();
+                }))
+        }))
     }
 }
 
