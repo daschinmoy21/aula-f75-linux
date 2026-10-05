@@ -10,8 +10,36 @@ Linux tooling for the AULA F75 keyboard (USB `258a:010c`).
 - `aula-f75 --dump <names.toml> <out.toml>` read the keyboard's keymap/colours (backup)
 - `aula-f75-gui [config.toml]` GPUI configurator (`cargo build --features gui`, dark zinc/blue UI): click a key, pick function/colour, Save / Read from keyboard / Apply
 
-Dev shell: `nix develop`. Needs a hidraw udev rule, e.g.
-`SUBSYSTEM=="hidraw", ATTRS{idVendor}=="258a", ATTRS{idProduct}=="010c", MODE="0666"`.
+## Install
+
+### Debian/Ubuntu, Fedora/RHEL, Arch (and derivatives)
+```sh
+git clone https://github.com/daschinmoy21/aula-f75-linux && cd aula-f75-linux
+./install.sh              # CLI + GUI; installs build deps, builds, installs to /usr/local, sets up udev
+./install.sh --cli-only   # skip the GUI and its many build deps
+./install.sh --uninstall
+```
+Needs Rust 1.85+ (get it from [rustup.rs](https://rustup.rs) if your distro's is older). The script uses `sudo` only for
+the package manager and for the install/udev steps. Options: `--prefix DIR`, `--no-deps`.
+
+### udev permissions
+`packaging/70-aula-f75.rules` is installed to `/etc/udev/rules.d/`. It tags the hidraw node with `uaccess`, so whoever is
+logged in at the seat can use it, with no world-writable device and no group to join. Replug the keyboard (or log out/in) once.
+Without systemd-logind/elogind, swap `TAG+="uaccess"` for `GROUP="plugdev", MODE="0660"` and add yourself to that group.
+
+### NixOS
+Add the flake input and enable the module (installs the binaries and the udev rule):
+```nix
+# flake.nix
+inputs.aula-f75.url = "github:daschinmoy21/aula-f75-linux";
+# in your nixosConfiguration modules:
+modules = [ inputs.aula-f75.nixosModules.default { programs.aula-f75.enable = true; } ];
+```
+Or try it without installing: `nix run github:daschinmoy21/aula-f75-linux` (the GUI; the rule still needs the module to be active).
+
+### Development
+Dev shell: `nix develop`. Needs the udev rule above (or, for quick testing only,
+`SUBSYSTEM=="hidraw", ATTRS{idVendor}=="258a", ATTRS{idProduct}=="010c", MODE="0666"`).
 Settings only reach the keyboard over USB, not the 2.4GHz dongle.
 
 `data/default.toml` is the stock keymap + colours. `examples/finnish-ansi.toml` is upstream's Finnish-ANSI sample.

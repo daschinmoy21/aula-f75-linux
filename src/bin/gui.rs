@@ -409,6 +409,16 @@ impl Configurator {
         };
         s.orig_keys = s.keys.clone();
         s.refresh_device();
+        if s.connected {
+            // The keyboard is the source of truth: show what it is actually doing.
+            let fallback = std::mem::take(&mut s.status);
+            s.read_from_keyboard();
+            if s.status.starts_with("Read failed") {
+                s.status = fallback;
+            } else {
+                s.status = "Loaded current keymap + colours from keyboard".into();
+            }
+        }
         s
     }
 

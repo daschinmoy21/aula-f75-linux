@@ -1,0 +1,6 @@
+# AULA F75: let the logged-in user talk to the keyboard's HID interface without root.
+# `uaccess` hands the hidraw node to whoever is at the seat (systemd-logind / elogind).
+# No logind? Replace TAG+="uaccess" with GROUP="plugdev", MODE="0660" and join that group.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="258a", ATTRS{idProduct}=="010c", TAG+="uaccess"
+# 2.4GHz dongle: only used by the read-only diagnostics in examples/
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3554", ATTRS{idProduct}=="fa09", TAG+="uaccess"

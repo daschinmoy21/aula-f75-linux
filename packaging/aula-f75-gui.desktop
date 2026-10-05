@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=AULA F75 Configurator
+Comment=Keymap and lighting for the AULA F75 keyboard
+Exec=aula-f75-gui
+Icon=input-keyboard
+Terminal=false
+Categories=Settings;HardwareSettings;
