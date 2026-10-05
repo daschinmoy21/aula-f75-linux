@@ -13,3 +13,8 @@ Settings only reach the keyboard over USB, not the 2.4GHz dongle.
 
 `data/default.toml` is the stock keymap + colours. `examples/finnish-ansi.toml` is upstream's Finnish-ANSI sample.
 `vendor/xattr` patches a gpui transitive dependency that no longer builds against current libc.
+
+## Troubleshooting
+- Fn+F-keys / Fn+arrows do nothing: see [docs/fn-layer-fix.md](docs/fn-layer-fix.md) (corrupted settings block, fixed with `examples/blockpatch.rs`).
+- Settings can't be changed over the 2.4GHz dongle (`3554:fa09`): it answers with a fixed stub instead of relaying the wired protocol (`examples/dongle_probe.rs`). Use the USB cable.
+- Backups of your keymap/settings go in `~/.config/aula-f75/backups/`; take one before experimenting.
