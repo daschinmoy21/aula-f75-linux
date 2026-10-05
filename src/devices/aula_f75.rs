@@ -1,12 +1,10 @@
-use crate::types::{
-    BatteryStatus, DeviceInfo, Effect, Key, KeyLayer, KeyType, LightParam, Macro,
-};
+use crate::types::{BatteryStatus, DeviceInfo, Effect, Key, KeyLayer, KeyType, LightParam, Macro};
 use crate::utils::{build_key_lookup, extract_color_from_lights, parse_hex};
 use anyhow::{Context, Result, anyhow, bail};
 use hidapi::{HidApi, HidDevice};
 use std::sync::Mutex;
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 
 // ============================================================================
 // Constants
@@ -88,7 +86,7 @@ impl super::Device for AulaF75 {
     fn get_uuid(&self) -> Result<u64> {
         self.get_uuid()
     }
-    
+
     fn fetch_battery(&self) -> Result<BatteryStatus> {
         self.fetch_battery()
     }
@@ -112,7 +110,7 @@ impl super::Device for AulaF75 {
     fn set_light_color(&self) -> Result<()> {
         self.set_light_color()
     }
-    
+
     fn get_custom_light(&self) -> Result<Vec<u8>> {
         self.get_custom_light()
     }
@@ -141,7 +139,7 @@ impl super::Device for AulaF75 {
     ) -> Result<Vec<Key>> {
         self.fetch_keys_layer(layer, macros, default_keys)
     }
-    
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -223,9 +221,9 @@ impl AulaF75 {
         let tx = Self::frame_packet(&CMD_GET_UUID);
         self.hid_send(&tx)?;
         let rx = self.hid_receive()?;
-        
+
         if rx.len() < 13 {
-             bail!("Invalid UUID response length: {}", rx.len());
+            bail!("Invalid UUID response length: {}", rx.len());
         }
 
         let uuid = (u64::from(rx[7]) << 40)
@@ -249,8 +247,10 @@ impl AulaF75 {
         let tx = Self::frame_packet(&CMD_GET_BATTERY);
         self.hid_send(&tx)?;
         let rx = self.hid_receive()?;
-        
-        let data = rx.get(7..).ok_or_else(|| anyhow!("Battery response too short"))?;
+
+        let data = rx
+            .get(7..)
+            .ok_or_else(|| anyhow!("Battery response too short"))?;
         if data.len() < 2 {
             bail!("Battery data section too short");
         }
@@ -265,10 +265,16 @@ impl AulaF75 {
         let tx = Self::frame_packet(&CMD_GET_BASIC_INFO);
         self.hid_send(&tx)?;
         let rx = self.hid_receive()?;
-        
-        let buf = rx.get(7..).ok_or_else(|| anyhow!("Basic info response too short"))?;
+
+        let buf = rx
+            .get(7..)
+            .ok_or_else(|| anyhow!("Basic info response too short"))?;
         if buf.len() != PAYLOAD_LENGTH_BASIC_INFO {
-            bail!("Expected {} bytes, got {}", PAYLOAD_LENGTH_BASIC_INFO, buf.len());
+            bail!(
+                "Expected {} bytes, got {}",
+                PAYLOAD_LENGTH_BASIC_INFO,
+                buf.len()
+            );
         }
 
         let light_mode = u16::from_be_bytes([buf[9], buf[10]])
@@ -354,7 +360,7 @@ impl AulaF75 {
         let tx = Self::frame_packet(&cmd);
         self.hid_send(&tx)?;
         let rx = self.hid_receive()?;
-        
+
         if rx.len() != PAYLOAD_LENGTH_KEYS - 1 {
             bail!("Unexpected get_keys response len");
         }
@@ -404,8 +410,10 @@ impl AulaF75 {
         let tx = Self::frame_packet(&CMD_GET_CUSTOM_LIGHT);
         self.hid_send(&tx)?;
         let rx = self.hid_receive()?;
-        
-        let data = rx.get(7..).ok_or_else(|| anyhow!("Custom light response too short"))?;
+
+        let data = rx
+            .get(7..)
+            .ok_or_else(|| anyhow!("Custom light response too short"))?;
         Ok(data.to_vec())
     }
 
@@ -444,7 +452,7 @@ impl AulaF75 {
         let offset = CMD_SET_LIGHT_COLOR.len();
         payload[offset..offset + SL.len()].copy_from_slice(&SL);
 
-        let offsets = [28,49,91,112,154,175,217,238,259,280];
+        let offsets = [28, 49, 91, 112, 154, 175, 217, 238, 259, 280];
         for offset in offsets {
             if offset + 2 < payload.len() {
                 payload[offset] = 0;

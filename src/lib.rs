@@ -16,11 +16,15 @@ pub struct KeysWrapper {
 }
 
 pub fn parse_config(s: &str) -> Result<Vec<Key>> {
-    Ok(toml::from_str::<KeysWrapper>(s).context("Failed to parse config")?.keys)
+    Ok(toml::from_str::<KeysWrapper>(s)
+        .context("Failed to parse config")?
+        .keys)
 }
 
 pub fn serialize_config(keys: &[Key]) -> Result<String> {
-    Ok(toml::to_string_pretty(&KeysWrapper { keys: keys.to_vec() })?)
+    Ok(toml::to_string_pretty(&KeysWrapper {
+        keys: keys.to_vec(),
+    })?)
 }
 
 /// Open the first supported keyboard that answers on its vendor HID interface.
@@ -38,5 +42,7 @@ pub fn connect() -> Result<Box<dyn Device>> {
             }
         }
     }
-    Err(anyhow!("No supported device found (USB connected? hidraw permissions?)"))
+    Err(anyhow!(
+        "No supported device found (USB connected? hidraw permissions?)"
+    ))
 }

@@ -1,6 +1,6 @@
+use anyhow::{Context, Result, anyhow};
 use aula_f75::types::{Effect, KeyLayer};
 use aula_f75::{connect, parse_config, serialize_config};
-use anyhow::{Context, Result, anyhow};
 use std::fs;
 
 const USAGE: &str = "usage: aula-f75 <config.toml>                    apply keymap + lighting\n       aula-f75 --dump <names.toml> <out.toml>   read keymap + colours from the keyboard";

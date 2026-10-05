@@ -12,7 +12,7 @@ pub trait DeviceDriver {
 pub trait Device: Any {
     fn get_uuid(&self) -> Result<u64>;
     fn fetch_battery(&self) -> Result<BatteryStatus>;
-    
+
     // Expanded methods to support functionality in main.rs
     fn get_basic_info(&self) -> Result<DeviceInfo>;
     fn set_basic_info(&self, info: &DeviceInfo) -> Result<()>;
@@ -24,13 +24,13 @@ pub trait Device: Any {
     fn get_light_color(&self) -> Result<Vec<u8>>;
     fn set_light_color(&self) -> Result<()>;
     fn send_reset(&self) -> Result<()>;
-    
+
     fn fetch_keys_layer(
         &self,
         layer: KeyLayer,
         macros: &[Macro],
         default_keys: &[Key],
     ) -> Result<Vec<Key>>;
-    
+
     fn as_any(&self) -> &dyn Any;
 }

@@ -1,9 +1,7 @@
 //! GPUI configurator: click a key, pick its function and colour, then apply to the keyboard.
 use aula_f75::types::{Color, Effect, Key, KeyLayer};
 use aula_f75::{DEFAULT_CONFIG, connect, parse_config, serialize_config};
-use gpui::{
-    App, Application, Context, Window, WindowOptions, div, prelude::*, px, rgb,
-};
+use gpui::{App, Application, Context, Window, WindowOptions, div, prelude::*, px, rgb};
 use std::path::PathBuf;
 
 /// Key unit in px. Physical layout below is keyed by `light_pos` (matrix index).
@@ -20,12 +18,43 @@ fn layout() -> Vec<Vec<Cell>> {
     let ks = |ps: &[usize], w: f32| -> Vec<Cell> { ps.iter().map(|&p| K(p, w)).collect() };
     let cat = |parts: Vec<Vec<Cell>>| -> Vec<Cell> { parts.into_iter().flatten().collect() };
     vec![
-        cat(vec![ks(&[0], 1.0), vec![Gap(1.0)], ks(&[12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78], 1.0), vec![Gap(1.0)], ks(&[84], 1.0)]),
-        cat(vec![ks(&[1, 7, 13, 19, 25, 31, 37, 43, 49, 55, 61, 67, 73], 1.0), ks(&[79], 2.0), ks(&[85], 1.0)]),
-        cat(vec![ks(&[2], 1.5), ks(&[8, 14, 20, 26, 32, 38, 44, 50, 56, 62, 68, 74], 1.0), ks(&[80], 1.5), ks(&[86], 1.0)]),
-        cat(vec![ks(&[3], 1.75), ks(&[9, 15, 21, 27, 33, 39, 45, 51, 57, 63, 69], 1.0), ks(&[81], 2.25), ks(&[87], 1.0)]),
-        cat(vec![ks(&[4], 2.25), ks(&[10, 16, 22, 28, 34, 40, 46, 52, 58, 64], 1.0), ks(&[70], 1.75), ks(&[82, 88], 1.0)]),
-        cat(vec![ks(&[5, 11, 17], 1.25), ks(&[35], 6.25), ks(&[53, 59], 1.0), vec![Gap(1.0)], ks(&[77, 83, 89], 1.0)]),
+        cat(vec![
+            ks(&[0], 1.0),
+            vec![Gap(1.0)],
+            ks(&[12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78], 1.0),
+            vec![Gap(1.0)],
+            ks(&[84], 1.0),
+        ]),
+        cat(vec![
+            ks(&[1, 7, 13, 19, 25, 31, 37, 43, 49, 55, 61, 67, 73], 1.0),
+            ks(&[79], 2.0),
+            ks(&[85], 1.0),
+        ]),
+        cat(vec![
+            ks(&[2], 1.5),
+            ks(&[8, 14, 20, 26, 32, 38, 44, 50, 56, 62, 68, 74], 1.0),
+            ks(&[80], 1.5),
+            ks(&[86], 1.0),
+        ]),
+        cat(vec![
+            ks(&[3], 1.75),
+            ks(&[9, 15, 21, 27, 33, 39, 45, 51, 57, 63, 69], 1.0),
+            ks(&[81], 2.25),
+            ks(&[87], 1.0),
+        ]),
+        cat(vec![
+            ks(&[4], 2.25),
+            ks(&[10, 16, 22, 28, 34, 40, 46, 52, 58, 64], 1.0),
+            ks(&[70], 1.75),
+            ks(&[82, 88], 1.0),
+        ]),
+        cat(vec![
+            ks(&[5, 11, 17], 1.25),
+            ks(&[35], 6.25),
+            ks(&[53, 59], 1.0),
+            vec![Gap(1.0)],
+            ks(&[77, 83, 89], 1.0),
+        ]),
     ]
 }
 
@@ -39,12 +68,36 @@ fn choices() -> Vec<(String, String)> {
         v.push((0x1e + i as u32, c.to_string()));
     }
     for (code, name) in [
-        (0x28, "Enter"), (0x29, "Esc"), (0x2a, "Bksp"), (0x2b, "Tab"), (0x2c, "Space"),
-        (0x2d, "-"), (0x2e, "="), (0x2f, "["), (0x30, "]"), (0x31, "\\"), (0x33, ";"),
-        (0x34, "'"), (0x35, "`"), (0x36, ","), (0x37, "."), (0x38, "/"), (0x39, "Caps"),
-        (0x46, "PrtSc"), (0x47, "ScrLk"), (0x48, "Pause"), (0x49, "Insert"), (0x4a, "Home"),
-        (0x4b, "PgUp"), (0x4c, "Delete"), (0x4d, "End"), (0x4e, "PgDn"), (0x4f, "Right"),
-        (0x50, "Left"), (0x51, "Down"), (0x52, "Up"),
+        (0x28, "Enter"),
+        (0x29, "Esc"),
+        (0x2a, "Bksp"),
+        (0x2b, "Tab"),
+        (0x2c, "Space"),
+        (0x2d, "-"),
+        (0x2e, "="),
+        (0x2f, "["),
+        (0x30, "]"),
+        (0x31, "\\"),
+        (0x33, ";"),
+        (0x34, "'"),
+        (0x35, "`"),
+        (0x36, ","),
+        (0x37, "."),
+        (0x38, "/"),
+        (0x39, "Caps"),
+        (0x46, "PrtSc"),
+        (0x47, "ScrLk"),
+        (0x48, "Pause"),
+        (0x49, "Insert"),
+        (0x4a, "Home"),
+        (0x4b, "PgUp"),
+        (0x4c, "Delete"),
+        (0x4d, "End"),
+        (0x4e, "PgDn"),
+        (0x4f, "Right"),
+        (0x50, "Left"),
+        (0x51, "Down"),
+        (0x52, "Up"),
     ] {
         v.push((code, name.to_string()));
     }
@@ -56,9 +109,14 @@ fn choices() -> Vec<(String, String)> {
         .map(|(c, n)| (format!("0x{c:08x}"), n))
         .collect();
     for (code, name) in [
-        (0x00010000u32, "L Ctrl"), (0x00020000, "L Shift"), (0x00040000, "L Alt"),
-        (0x00080000, "L Win"), (0x00100000, "R Ctrl"), (0x00200000, "R Shift"),
-        (0x00400000, "R Alt"), (0x0d000000, "Fn"),
+        (0x00010000u32, "L Ctrl"),
+        (0x00020000, "L Shift"),
+        (0x00040000, "L Alt"),
+        (0x00080000, "L Win"),
+        (0x00100000, "R Ctrl"),
+        (0x00200000, "R Shift"),
+        (0x00400000, "R Alt"),
+        (0x0d000000, "Fn"),
     ] {
         out.push((format!("0x{code:08x}"), name.to_string()));
     }
@@ -74,6 +132,7 @@ struct Configurator {
     keys: Vec<Key>,
     selected: Option<usize>,
     path: PathBuf,
+    battery: Option<(u8, bool)>,
     status: String,
     choices: Vec<(String, String)>,
 }
@@ -87,11 +146,23 @@ impl Configurator {
                 format!("{} not found: showing bundled defaults", path.display()),
             ),
         };
-        Self { keys, selected: None, path, status, choices: choices() }
+        let mut s = Self {
+            keys,
+            selected: None,
+            path,
+            status,
+            battery: None,
+            choices: choices(),
+        };
+        s.refresh_battery();
+        s
     }
 
     fn label_for(&self, value: &str) -> Option<&str> {
-        self.choices.iter().find(|(v, _)| v == value).map(|(_, n)| n.as_str())
+        self.choices
+            .iter()
+            .find(|(v, _)| v == value)
+            .map(|(_, n)| n.as_str())
     }
 
     fn set_color(&mut self, rgb_val: u32) {
@@ -114,15 +185,20 @@ impl Configurator {
         }
     }
 
+    fn refresh_battery(&mut self) {
+        self.battery = connect()
+            .and_then(|d| d.fetch_battery())
+            .ok()
+            .map(|b| (b.level, b.charging));
+    }
+
     fn save(&mut self) {
-        self.status = match serialize_config(&self.keys)
-            .and_then(|s| {
-                if let Some(dir) = self.path.parent() {
-                    std::fs::create_dir_all(dir)?;
-                }
-                Ok(std::fs::write(&self.path, s)?)
-            })
-        {
+        self.status = match serialize_config(&self.keys).and_then(|s| {
+            if let Some(dir) = self.path.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            Ok(std::fs::write(&self.path, s)?)
+        }) {
             Ok(()) => format!("Saved {}", self.path.display()),
             Err(e) => format!("Save failed: {e}"),
         };
@@ -145,14 +221,15 @@ impl Configurator {
 
     fn read_from_keyboard(&mut self) {
         let names = self.keys.clone();
-        self.status = match connect().and_then(|d| d.fetch_keys_layer(KeyLayer::Normal, &[], &names)) {
-            Ok(k) => {
-                self.keys = k;
-                self.selected = None;
-                "Read keymap + colours from keyboard".into()
-            }
-            Err(e) => format!("Read failed: {e}"),
-        };
+        self.status =
+            match connect().and_then(|d| d.fetch_keys_layer(KeyLayer::Normal, &[], &names)) {
+                Ok(k) => {
+                    self.keys = k;
+                    self.selected = None;
+                    "Read keymap + colours from keyboard".into()
+                }
+                Err(e) => format!("Read failed: {e}"),
+            };
     }
 }
 
@@ -248,12 +325,18 @@ impl Render for Configurator {
             }
         }
         let rows = if extra_x > 0.0 { 7.5 } else { 6.0 };
-        let mut board = div().relative().w(px(max_x.max(extra_x) * U)).h(px(rows * U));
+        let mut board = div()
+            .relative()
+            .w(px(max_x.max(extra_x) * U))
+            .h(px(rows * U));
         for (i, px_x, px_y, kw) in placed {
             let k = &self.keys[i];
             let c = &k.color;
             let led = rgb(((c.r as u32) << 16) | ((c.g as u32) << 8) | c.b as u32);
-            let label = self.label_for(&k.value).unwrap_or(&k.name).replace("滚轮", "Knob");
+            let label = self
+                .label_for(&k.value)
+                .unwrap_or(&k.name)
+                .replace("滚轮", "Knob");
             let selected = self.selected == Some(i);
             board = board.child(
                 div()
@@ -319,66 +402,75 @@ impl Render for Configurator {
                         ),
                 )
                 .child(section("Colour"))
-                .child(div().flex().flex_wrap().gap_2().children(PALETTE.iter().map(|&p| {
-                    let on = ((c.r as u32) << 16 | (c.g as u32) << 8 | c.b as u32) == p;
+                .child(
                     div()
-                        .id(("sw", p as usize))
-                        .size(px(22.0))
-                        .rounded_full()
-                        .bg(rgb(p))
-                        .border_2()
-                        .border_color(rgb(if on { ACCENT } else { BORDER }))
-                        .cursor_pointer()
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.set_color(p);
-                            cx.notify();
-                        }))
-                })))
-                .child(div().flex().flex_col().gap_1().children(
-                    [("R", c.r), ("G", c.g), ("B", c.b)].into_iter().enumerate().map(
-                        |(ch, (name, val))| {
+                        .flex()
+                        .flex_wrap()
+                        .gap_2()
+                        .children(PALETTE.iter().map(|&p| {
+                            let on = ((c.r as u32) << 16 | (c.g as u32) << 8 | c.b as u32) == p;
                             div()
-                                .flex()
-                                .items_center()
-                                .gap_2()
-                                .text_sm()
-                                .child(div().w(px(14.0)).text_color(rgb(MUTED_FG)).child(name))
-                                .child(small_button((["r-", "g-", "b-"][ch], 0), "−").on_click(
-                                    cx.listener(move |this, _, _, cx| {
-                                        this.nudge(ch, -16);
-                                        cx.notify();
-                                    }),
-                                ))
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .h(px(4.0))
-                                        .rounded_full()
-                                        .bg(rgb(SURFACE))
-                                        .child(
-                                            div()
-                                                .h_full()
-                                                .rounded_full()
-                                                .bg(rgb(ACCENT))
-                                                .w(gpui::relative(val as f32 / 255.0)),
-                                        ),
-                                )
-                                .child(small_button((["r+", "g+", "b+"][ch], 0), "+").on_click(
-                                    cx.listener(move |this, _, _, cx| {
-                                        this.nudge(ch, 16);
-                                        cx.notify();
-                                    }),
-                                ))
-                                .child(
-                                    div()
-                                        .w(px(28.0))
-                                        .text_xs()
-                                        .text_color(rgb(MUTED_FG))
-                                        .child(val.to_string()),
-                                )
-                        },
+                                .id(("sw", p as usize))
+                                .size(px(22.0))
+                                .rounded_full()
+                                .bg(rgb(p))
+                                .border_2()
+                                .border_color(rgb(if on { ACCENT } else { BORDER }))
+                                .cursor_pointer()
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.set_color(p);
+                                    cx.notify();
+                                }))
+                        })),
+                )
+                .child(
+                    div().flex().flex_col().gap_1().children(
+                        [("R", c.r), ("G", c.g), ("B", c.b)]
+                            .into_iter()
+                            .enumerate()
+                            .map(|(ch, (name, val))| {
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .text_sm()
+                                    .child(div().w(px(14.0)).text_color(rgb(MUTED_FG)).child(name))
+                                    .child(small_button((["r-", "g-", "b-"][ch], 0), "−").on_click(
+                                        cx.listener(move |this, _, _, cx| {
+                                            this.nudge(ch, -16);
+                                            cx.notify();
+                                        }),
+                                    ))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .h(px(4.0))
+                                            .rounded_full()
+                                            .bg(rgb(SURFACE))
+                                            .child(
+                                                div()
+                                                    .h_full()
+                                                    .rounded_full()
+                                                    .bg(rgb(ACCENT))
+                                                    .w(gpui::relative(val as f32 / 255.0)),
+                                            ),
+                                    )
+                                    .child(small_button((["r+", "g+", "b+"][ch], 0), "+").on_click(
+                                        cx.listener(move |this, _, _, cx| {
+                                            this.nudge(ch, 16);
+                                            cx.notify();
+                                        }),
+                                    ))
+                                    .child(
+                                        div()
+                                            .w(px(28.0))
+                                            .text_xs()
+                                            .text_color(rgb(MUTED_FG))
+                                            .child(val.to_string()),
+                                    )
+                            }),
                     ),
-                ))
+                )
                 .child(section("Function"))
                 .child(
                     div()
@@ -415,7 +507,10 @@ impl Render for Configurator {
                 );
         } else {
             panel = panel.child(
-                div().text_sm().text_color(rgb(MUTED_FG)).child("Select a key to edit its colour and function."),
+                div()
+                    .text_sm()
+                    .text_color(rgb(MUTED_FG))
+                    .child("Select a key to edit its colour and function."),
             );
         }
 
@@ -452,27 +547,57 @@ impl Render for Configurator {
                     .child(
                         div()
                             .flex()
-                            .gap_2()
-                            .child(button("save", "Save", Variant::Outline).on_click(cx.listener(
-                                |this, _, _, cx| {
-                                    this.save();
-                                    cx.notify();
-                                },
-                            )))
+                            .items_center()
+                            .gap_3()
                             .child(
-                                button("read", "Read from keyboard", Variant::Outline).on_click(
-                                    cx.listener(|this, _, _, cx| {
-                                        this.read_from_keyboard();
+                                div()
+                                    .id("battery")
+                                    .h(px(32.0))
+                                    .px_3()
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .rounded_md()
+                                    .border_1()
+                                    .border_color(rgb(BORDER))
+                                    .text_sm()
+                                    .text_color(rgb(MUTED_FG))
+                                    .hover(|s| s.bg(rgb(SURFACE)))
+                                    .cursor_pointer()
+                                    .child(match self.battery {
+                                        Some((lvl, true)) => format!("\u{26a1} {lvl}%"),
+                                        Some((lvl, false)) => format!("Battery {lvl}%"),
+                                        None => "Battery n/a".to_string(),
+                                    })
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.refresh_battery();
                                         cx.notify();
-                                    }),
-                                ),
+                                    })),
                             )
-                            .child(button("apply", "Apply", Variant::Primary).on_click(
-                                cx.listener(|this, _, _, cx| {
-                                    this.apply();
-                                    cx.notify();
-                                }),
-                            )),
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap_2()
+                                    .child(button("save", "Save", Variant::Outline).on_click(
+                                        cx.listener(|this, _, _, cx| {
+                                            this.save();
+                                            cx.notify();
+                                        }),
+                                    ))
+                                    .child(
+                                        button("read", "Read from keyboard", Variant::Outline)
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.read_from_keyboard();
+                                                cx.notify();
+                                            })),
+                                    )
+                                    .child(button("apply", "Apply", Variant::Primary).on_click(
+                                        cx.listener(|this, _, _, cx| {
+                                            this.apply();
+                                            cx.notify();
+                                        }),
+                                    )),
+                            ),
                     ),
             )
             .child(
@@ -505,11 +630,14 @@ impl Render for Configurator {
 }
 
 fn main() {
-    let path = std::env::args().nth(1).map(PathBuf::from).unwrap_or_else(|| {
-        std::env::var_os("HOME")
-            .map(|h| PathBuf::from(h).join(".config/aula-f75/config.toml"))
-            .unwrap_or_else(|| PathBuf::from("config.toml"))
-    });
+    let path = std::env::args()
+        .nth(1)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::var_os("HOME")
+                .map(|h| PathBuf::from(h).join(".config/aula-f75/config.toml"))
+                .unwrap_or_else(|| PathBuf::from("config.toml"))
+        });
     Application::new().run(move |cx: &mut App| {
         let bounds = gpui::Bounds::centered(None, gpui::size(px(1280.0), px(600.0)), cx);
         let opts = WindowOptions {
