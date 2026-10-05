@@ -136,7 +136,6 @@ enum Tab {
 }
 
 const EFFECTS: [(Effect, &str); 16] = [
-    (Effect::Off, "Off"),
     (Effect::FixedOn, "Fixed on"),
     (Effect::Respire, "Respire"),
     (Effect::Rainbow, "Rainbow"),
@@ -149,9 +148,10 @@ const EFFECTS: [(Effect, &str); 16] = [
     (Effect::Reaction, "Reaction"),
     (Effect::SineWave, "Sine wave"),
     (Effect::RotatingWindmill, "Rotating windmill"),
-    (Effect::ColorfulWaterfall, "Colourful waterfall"),
+    (Effect::ColorfulWaterfall, "Colorful waterfall"),
     (Effect::Blossoming, "Blossoming"),
-    (Effect::SelfDefine, "Custom (per-key)"),
+    (Effect::SelfDefine, "Self-define"),
+    (Effect::Off, "Off"),
 ];
 
 fn hsv(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
@@ -277,6 +277,8 @@ struct Configurator {
     tab: Tab,
     effect: Effect,
     started: Instant,
+    effect_dirty: bool,
+    orig_keys: Vec<Key>,
 }
 
 impl Configurator {
@@ -302,11 +304,11 @@ impl Configurator {
             },
             effect: Effect::FixedOn,
             started: Instant::now(),
+            effect_dirty: false,
+            orig_keys: Vec::new(),
         };
-        s.refresh_battery();
-        if let Ok(info) = connect().and_then(|d| d.get_basic_info()) {
-            s.effect = info.light_mode;
-        }
+        s.orig_keys = s.keys.clone();
+        s.refresh_device();
         s
     }
 
@@ -337,11 +339,18 @@ impl Configurator {
         }
     }
 
-    fn refresh_battery(&mut self) {
-        self.battery = connect()
-            .and_then(|d| d.fetch_battery())
-            .ok()
-            .map(|b| (b.level, b.charging));
+    /// Re-read battery and (unless you have an unapplied choice) the current lighting effect.
+    fn refresh_device(&mut self) {
+        let Ok(d) = connect() else {
+            self.battery = None;
+            return;
+        };
+        self.battery = d.fetch_battery().ok().map(|b| (b.level, b.charging));
+        if !self.effect_dirty {
+            if let Ok(info) = d.get_basic_info() {
+                self.effect = info.light_mode;
+            }
+        }
     }
 
     fn save(&mut self) {
@@ -356,17 +365,53 @@ impl Configurator {
         };
     }
 
+    /// Write only what was edited: key codes, per-key colours and/or the lighting effect.
     fn apply(&mut self) {
         let keys = self.keys.clone();
+        let changed = |f: &dyn Fn(&Key, &Key) -> bool| {
+            keys.iter().any(|k| {
+                self.orig_keys
+                    .iter()
+                    .find(|o| o.light_pos == k.light_pos)
+                    .is_none_or(|o| f(k, o))
+            })
+        };
+        let keys_changed = changed(&|k, o| k.value != o.value);
+        let colours_changed = changed(&|k, o| k.color != o.color);
+        let effect_changed = self.effect_dirty;
+        if !(keys_changed || colours_changed || effect_changed) {
+            self.status = "Nothing to apply: no edits since load or last apply".into();
+            return;
+        }
         let effect = self.effect;
         self.status = match connect().and_then(|d| {
-            d.set_keys(KeyLayer::Normal, &keys)?;
-            let mut info = d.get_basic_info()?;
-            info.light_mode = effect;
-            d.set_basic_info(&info)?;
-            d.set_custom_light(&keys)
+            if keys_changed {
+                d.set_keys(KeyLayer::Normal, &keys)?;
+            }
+            if effect_changed {
+                d.set_light_mode(effect)?;
+            }
+            if colours_changed {
+                d.set_custom_light(&keys)?;
+            }
+            Ok(())
         }) {
-            Ok(()) => "Applied to keyboard".into(),
+            Ok(()) => {
+                self.orig_keys = keys;
+                self.effect_dirty = false;
+                format!(
+                    "Applied: {}",
+                    [
+                        keys_changed.then_some("keys"),
+                        effect_changed.then_some("effect"),
+                        colours_changed.then_some("per-key colours"),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+                )
+            }
             Err(e) => format!("Apply failed: {e}"),
         };
     }
@@ -377,6 +422,9 @@ impl Configurator {
             match connect().and_then(|d| d.fetch_keys_layer(KeyLayer::Normal, &[], &names)) {
                 Ok(k) => {
                     self.keys = k;
+                    self.orig_keys = self.keys.clone();
+                    self.effect_dirty = false;
+                    self.refresh_device();
                     self.selected = None;
                     "Read keymap + colours from keyboard".into()
                 }
@@ -570,6 +618,7 @@ impl Render for Configurator {
                                 .child(*name)
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.effect = eff;
+                                    this.effect_dirty = true;
                                     cx.notify();
                                 }))
                         })),
@@ -578,7 +627,7 @@ impl Render for Configurator {
                     div()
                         .text_xs()
                         .text_color(rgb(MUTED_FG))
-                        .child("Preview is an approximation. Apply sends the effect to the keyboard. Per-key colours show in Custom."),
+                        .child("Preview is an approximation. Apply sends the effect to the keyboard. Per-key colours show in Self-define."),
                 );
         } else if let Some(i) = self.selected {
             let k = &self.keys[i];
@@ -795,7 +844,7 @@ impl Render for Configurator {
                                         None => "Battery n/a".to_string(),
                                     })
                                     .on_click(cx.listener(|this, _, _, cx| {
-                                        this.refresh_battery();
+                                        this.refresh_device();
                                         cx.notify();
                                     })),
                             )

@@ -99,6 +99,10 @@ impl super::Device for AulaF75 {
         self.set_basic_info(info)
     }
 
+    fn set_light_mode(&self, effect: Effect) -> Result<()> {
+        self.set_light_mode(effect)
+    }
+
     fn get_keys(&self, layer: KeyLayer) -> Result<Vec<u8>> {
         self.get_keys(layer)
     }
@@ -298,7 +302,9 @@ impl AulaF75 {
         })
     }
 
-    pub fn set_basic_info(&self, info: &DeviceInfo) -> Result<()> {
+    /// Payload the legacy `set_basic_info` sends. It rebuilds the settings block from a few parsed
+    /// fields plus hardcoded bytes, so it can clobber settings it does not model (e.g. effect colours).
+    pub fn legacy_basic_payload(info: &DeviceInfo) -> Vec<u8> {
         let mut payload = vec![0u8; SEND_PAYLOAD_LENGTH];
         payload[..CMD_SET_BASIC_INFO.len()].copy_from_slice(&CMD_SET_BASIC_INFO);
 
@@ -348,10 +354,52 @@ impl AulaF75 {
 
         payload[end_index] = 90;
         payload[end_index + 1] = 165;
+        payload
+    }
 
+    pub fn set_basic_info(&self, info: &DeviceInfo) -> Result<()> {
+        let tx = Self::frame_packet(&Self::legacy_basic_payload(info));
+        self.hid_send(&tx)?;
+        Ok(())
+    }
+
+    /// The raw 128-byte settings block exactly as the keyboard reports it.
+    pub fn get_basic_raw(&self) -> Result<Vec<u8>> {
+        let tx = Self::frame_packet(&CMD_GET_BASIC_INFO);
+        self.hid_send(&tx)?;
+        let rx = self.hid_receive()?;
+        let buf = rx
+            .get(7..)
+            .ok_or_else(|| anyhow!("Basic info response too short"))?;
+        if buf.len() != PAYLOAD_LENGTH_BASIC_INFO {
+            bail!(
+                "Expected {} bytes, got {}",
+                PAYLOAD_LENGTH_BASIC_INFO,
+                buf.len()
+            );
+        }
+        Ok(buf.to_vec())
+    }
+
+    pub fn set_basic_raw(&self, raw: &[u8]) -> Result<()> {
+        if raw.len() != PAYLOAD_LENGTH_BASIC_INFO {
+            bail!("Settings block must be {} bytes", PAYLOAD_LENGTH_BASIC_INFO);
+        }
+        let mut payload = vec![0u8; SEND_PAYLOAD_LENGTH];
+        payload[..CMD_SET_BASIC_INFO.len()].copy_from_slice(&CMD_SET_BASIC_INFO);
+        payload[7..7 + raw.len()].copy_from_slice(raw);
         let tx = Self::frame_packet(&payload);
         self.hid_send(&tx)?;
         Ok(())
+    }
+
+    /// Change only the lighting effect; every other setting is written back exactly as read.
+    pub fn set_light_mode(&self, effect: Effect) -> Result<()> {
+        let mut raw = self.get_basic_raw()?;
+        let m = (effect as u16).to_be_bytes();
+        raw[9] = m[0];
+        raw[10] = m[1];
+        self.set_basic_raw(&raw)
     }
 
     pub fn get_keys(&self, layer: KeyLayer) -> Result<Vec<u8>> {

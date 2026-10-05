@@ -1,4 +1,4 @@
-use crate::types::{BatteryStatus, DeviceInfo, Key, KeyLayer, Macro};
+use crate::types::{BatteryStatus, DeviceInfo, Effect, Key, KeyLayer, Macro};
 use anyhow::Result;
 use std::any::Any;
 
@@ -16,6 +16,7 @@ pub trait Device: Any {
     // Expanded methods to support functionality in main.rs
     fn get_basic_info(&self) -> Result<DeviceInfo>;
     fn set_basic_info(&self, info: &DeviceInfo) -> Result<()>;
+    fn set_light_mode(&self, effect: Effect) -> Result<()>;
     fn get_keys(&self, layer: KeyLayer) -> Result<Vec<u8>>;
     fn set_keys(&self, layer: KeyLayer, keys: &[Key]) -> Result<()>;
     fn get_custom_light(&self) -> Result<Vec<u8>>;
