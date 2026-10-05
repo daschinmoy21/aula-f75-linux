@@ -3,6 +3,7 @@ use aula_f75::types::{Color, Effect, Key, KeyLayer};
 use aula_f75::{DEFAULT_CONFIG, connect, parse_config, serialize_config};
 use gpui::{App, Application, Context, Window, WindowOptions, div, prelude::*, px, rgb};
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 /// Key unit in px. Physical layout below is keyed by `light_pos` (matrix index).
 const U: f32 = 50.0;
@@ -128,6 +129,144 @@ const PALETTE: [u32; 10] = [
     0x000000,
 ];
 
+#[derive(Clone, Copy, PartialEq)]
+enum Tab {
+    Keys,
+    Lighting,
+}
+
+const EFFECTS: [(Effect, &str); 16] = [
+    (Effect::Off, "Off"),
+    (Effect::FixedOn, "Fixed on"),
+    (Effect::Respire, "Respire"),
+    (Effect::Rainbow, "Rainbow"),
+    (Effect::FlashAway, "Flash away"),
+    (Effect::Raindrops, "Raindrops"),
+    (Effect::RipplesShining, "Ripples shining"),
+    (Effect::StarsTwinkle, "Stars twinkle"),
+    (Effect::RetroSnake, "Retro snake"),
+    (Effect::NeonStream, "Neon stream"),
+    (Effect::Reaction, "Reaction"),
+    (Effect::SineWave, "Sine wave"),
+    (Effect::RotatingWindmill, "Rotating windmill"),
+    (Effect::ColorfulWaterfall, "Colourful waterfall"),
+    (Effect::Blossoming, "Blossoming"),
+    (Effect::SelfDefine, "Custom (per-key)"),
+];
+
+fn hsv(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
+    let h = h.rem_euclid(360.0) / 60.0;
+    let (i, f) = (h.floor() as i32, h - h.floor());
+    let (p, q, t) = (v * (1.0 - s), v * (1.0 - s * f), v * (1.0 - s * (1.0 - f)));
+    let (r, g, b) = match i {
+        0 => (v, t, p),
+        1 => (q, v, p),
+        2 => (p, v, t),
+        3 => (p, q, v),
+        4 => (t, p, v),
+        _ => (v, p, q),
+    };
+    ((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8)
+}
+
+fn hash(a: i32, b: i32) -> f32 {
+    let mut h = (a as u32).wrapping_mul(0x9e3779b1) ^ (b as u32).wrapping_mul(0x85ebca6b);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2c1b3c6d);
+    h ^= h >> 12;
+    (h & 0xffff) as f32 / 65535.0
+}
+
+/// Approximate on-screen preview of a firmware effect (not the firmware's exact animation).
+/// `x`,`y` are the key's position in layout units, `t` is seconds, `base` the key's own colour.
+fn preview(effect: Effect, x: f32, y: f32, t: f32, base: (u8, u8, u8)) -> (u8, u8, u8) {
+    let scale = |c: (u8, u8, u8), k: f32| {
+        let k = k.clamp(0.0, 1.0);
+        (
+            (c.0 as f32 * k) as u8,
+            (c.1 as f32 * k) as u8,
+            (c.2 as f32 * k) as u8,
+        )
+    };
+    let (cx, cy) = (7.5, 2.5);
+    let dist = ((x - cx).powi(2) + ((y - cy) * 1.4).powi(2)).sqrt();
+    match effect {
+        Effect::Off => (0, 0, 0),
+        Effect::FixedOn | Effect::SelfDefine => base,
+        Effect::Respire => scale(hsv(210.0, 0.8, 1.0), 0.5 + 0.5 * (t * 2.0).sin()),
+        Effect::Rainbow => hsv(x * 22.0 + t * 90.0, 1.0, 1.0),
+        Effect::FlashAway => {
+            let k = ((t * 1.5).fract() < 0.5) as i32 as f32;
+            scale(hsv((t * 1.5).floor() * 60.0, 1.0, 1.0), k)
+        }
+        Effect::Raindrops => {
+            let tt = t * 3.0 + y * 0.7;
+            let h = hash(x as i32, tt.floor() as i32);
+            scale(
+                hsv(200.0, 0.7, 1.0),
+                if h > 0.8 { 1.0 - tt.fract() } else { 0.05 },
+            )
+        }
+        Effect::RipplesShining => {
+            let d = (dist - (t * 4.0) % 12.0).abs();
+            scale(hsv(180.0 + dist * 12.0, 0.8, 1.0), 1.0 - d * 0.6)
+        }
+        Effect::StarsTwinkle => {
+            let h = hash(
+                x as i32 * 7 + y as i32,
+                (t * 1.5 + hash(x as i32, y as i32) * 6.0) as i32,
+            );
+            scale((255, 255, 255), if h > 0.75 { 1.0 } else { 0.05 })
+        }
+        Effect::RetroSnake => {
+            let idx = (y as i32 * 16
+                + if y as i32 % 2 == 0 {
+                    x as i32
+                } else {
+                    15 - x as i32
+                }) as f32;
+            let head = (t * 14.0) % 96.0;
+            let behind = (head - idx).rem_euclid(96.0);
+            scale(
+                hsv(120.0, 1.0, 1.0),
+                if behind < 10.0 {
+                    1.0 - behind / 10.0
+                } else {
+                    0.03
+                },
+            )
+        }
+        Effect::NeonStream => hsv(
+            x * 25.0 - t * 140.0,
+            1.0,
+            if ((x - t * 5.0) as i32) % 3 == 0 {
+                1.0
+            } else {
+                0.35
+            },
+        ),
+        Effect::Reaction => {
+            let h = hash(x as i32, y as i32);
+            let k = ((t * 0.8 + h * 5.0) % 3.0 / 3.0).min(1.0);
+            scale(hsv(30.0, 0.9, 1.0), 1.0 - k * 1.3)
+        }
+        Effect::SineWave => scale(
+            hsv(190.0, 0.9, 1.0),
+            0.5 + 0.5 * (x * 0.6 + y * 0.5 - t * 3.0).sin(),
+        ),
+        Effect::RotatingWindmill => {
+            let a = (y - cy).atan2(x - cx).to_degrees();
+            hsv(a * 2.0 + t * 120.0, 1.0, 1.0)
+        }
+        Effect::ColorfulWaterfall => hsv(y * 55.0 - t * 110.0 + x * 6.0, 1.0, 1.0),
+        Effect::Blossoming => hsv(
+            dist * 30.0 - t * 80.0,
+            0.9,
+            0.5 + 0.5 * (dist * 0.9 - t * 4.0).sin(),
+        ),
+    }
+}
+
 struct Configurator {
     keys: Vec<Key>,
     selected: Option<usize>,
@@ -135,6 +274,9 @@ struct Configurator {
     battery: Option<(u8, bool)>,
     status: String,
     choices: Vec<(String, String)>,
+    tab: Tab,
+    effect: Effect,
+    started: Instant,
 }
 
 impl Configurator {
@@ -153,8 +295,18 @@ impl Configurator {
             status,
             battery: None,
             choices: choices(),
+            tab: if std::env::var_os("AULA_TAB_LIGHTING").is_some() {
+                Tab::Lighting
+            } else {
+                Tab::Keys
+            },
+            effect: Effect::FixedOn,
+            started: Instant::now(),
         };
         s.refresh_battery();
+        if let Ok(info) = connect().and_then(|d| d.get_basic_info()) {
+            s.effect = info.light_mode;
+        }
         s
     }
 
@@ -206,13 +358,13 @@ impl Configurator {
 
     fn apply(&mut self) {
         let keys = self.keys.clone();
+        let effect = self.effect;
         self.status = match connect().and_then(|d| {
             d.set_keys(KeyLayer::Normal, &keys)?;
             let mut info = d.get_basic_info()?;
-            info.light_mode = Effect::FixedOn;
+            info.light_mode = effect;
             d.set_basic_info(&info)?;
-            d.set_custom_light(&keys)?;
-            d.set_light_color()
+            d.set_custom_light(&keys)
         }) {
             Ok(()) => "Applied to keyboard".into(),
             Err(e) => format!("Apply failed: {e}"),
@@ -332,7 +484,19 @@ impl Render for Configurator {
         for (i, px_x, px_y, kw) in placed {
             let k = &self.keys[i];
             let c = &k.color;
-            let led = rgb(((c.r as u32) << 16) | ((c.g as u32) << 8) | c.b as u32);
+            let base = (c.r, c.g, c.b);
+            let (lr, lg, lb) = if self.tab == Tab::Lighting {
+                preview(
+                    self.effect,
+                    px_x,
+                    px_y,
+                    self.started.elapsed().as_secs_f32(),
+                    base,
+                )
+            } else {
+                base
+            };
+            let led = rgb(((lr as u32) << 16) | ((lg as u32) << 8) | lb as u32);
             let label = self
                 .label_for(&k.value)
                 .unwrap_or(&k.name)
@@ -380,7 +544,43 @@ impl Render for Configurator {
             .border_color(rgb(BORDER))
             .bg(rgb(CARD));
 
-        if let Some(i) = self.selected {
+        if self.tab == Tab::Lighting {
+            panel = panel
+                .child(section("Effect"))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .children(EFFECTS.iter().enumerate().map(|(ei, (eff, name))| {
+                            let on = self.effect == *eff;
+                            let eff = *eff;
+                            div()
+                                .id(("effect", ei))
+                                .px_3()
+                                .py_1()
+                                .rounded_md()
+                                .border_1()
+                                .border_color(rgb(if on { ACCENT } else { BORDER }))
+                                .bg(rgb(if on { SURFACE } else { CARD }))
+                                .text_sm()
+                                .text_color(rgb(if on { FG } else { MUTED_FG }))
+                                .hover(|s| s.bg(rgb(SURFACE)))
+                                .cursor_pointer()
+                                .child(*name)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.effect = eff;
+                                    cx.notify();
+                                }))
+                        })),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(rgb(MUTED_FG))
+                        .child("Preview is an approximation. Apply sends the effect to the keyboard. Per-key colours show in Custom."),
+                );
+        } else if let Some(i) = self.selected {
             let k = &self.keys[i];
             let c = &k.color;
             panel = panel
@@ -542,6 +742,31 @@ impl Render for Configurator {
                                     .text_sm()
                                     .text_color(rgb(MUTED_FG))
                                     .child(self.path.display().to_string()),
+                            )
+                            .child(
+                                div().flex().gap_1().mt_2().children(
+                                    [(Tab::Keys, "Keys"), (Tab::Lighting, "Lighting")]
+                                        .into_iter()
+                                        .enumerate()
+                                        .map(|(ti, (tab, name))| {
+                                            let on = self.tab == tab;
+                                            div()
+                                                .id(("tab", ti))
+                                                .px_3()
+                                                .py_1()
+                                                .rounded_md()
+                                                .text_sm()
+                                                .bg(rgb(if on { SURFACE } else { BG }))
+                                                .text_color(rgb(if on { FG } else { MUTED_FG }))
+                                                .hover(|s| s.bg(rgb(SURFACE)))
+                                                .cursor_pointer()
+                                                .child(name)
+                                                .on_click(cx.listener(move |this, _, _, cx| {
+                                                    this.tab = tab;
+                                                    cx.notify();
+                                                }))
+                                        }),
+                                ),
                             ),
                     )
                     .child(
@@ -645,8 +870,28 @@ fn main() {
             window_background: gpui::WindowBackgroundAppearance::Opaque,
             ..Default::default()
         };
-        cx.open_window(opts, |_, cx| cx.new(|_| Configurator::new(path)))
-            .expect("open window");
+        cx.open_window(opts, |_, cx| {
+            cx.new(|cx| {
+                cx.spawn(async move |this, cx| {
+                    loop {
+                        cx.background_executor()
+                            .timer(Duration::from_millis(33))
+                            .await;
+                        let alive = this.update(cx, |s: &mut Configurator, cx| {
+                            if s.tab == Tab::Lighting {
+                                cx.notify();
+                            }
+                        });
+                        if alive.is_err() {
+                            break;
+                        }
+                    }
+                })
+                .detach();
+                Configurator::new(path)
+            })
+        })
+        .expect("open window");
         cx.activate(true);
     });
 }

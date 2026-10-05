@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, anyhow};
-use aula_f75::types::{Effect, KeyLayer};
+use aula_f75::types::KeyLayer;
 use aula_f75::{connect, parse_config, serialize_config};
 use std::fs;
 
@@ -24,11 +24,7 @@ fn main() -> Result<()> {
 
     println!("Writing keymap...");
     device.set_keys(KeyLayer::Normal, &keys)?;
-    let mut info = device.get_basic_info()?;
-    info.light_mode = Effect::FixedOn;
-    device.set_basic_info(&info)?;
     device.set_custom_light(&keys)?;
-    device.set_light_color()?;
     println!("Done.");
     Ok(())
 }
