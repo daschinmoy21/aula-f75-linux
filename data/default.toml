@@ -1,0 +1,1223 @@
+# AULA F75 keymap + lighting, applied with: aula-f75 ~/blkedn/keyboard/aula-f75.toml (keyboard connected via USB).
+# Based on upstream test.toml with the Finnish-ANSI remaps reverted (Delete, PgUp restored to stock codes).
+# Right Fn restored to its stock code 0x0d000000 (read from the keyboard via --dump).
+# Lighting (colors) is still upstream's; applying forces fixed-on light mode. backup-original.toml = keyboard state before first apply.
+
+[[keys]]
+name = "Esc"
+value = "0x00000029"
+pos = 0
+light_pos = 0
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 1
+g = 1
+b = 255
+a = 1
+
+[[keys]]
+name = "`~"
+value = "0x00000035"
+pos = 4
+light_pos = 1
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "Tab"
+value = "0x0000002b"
+pos = 8
+light_pos = 2
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "Caps"
+value = "0x00000039"
+pos = 12
+light_pos = 3
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "L_Shift"
+value = "0x00020000"
+pos = 16
+light_pos = 4
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "L_Ctrl"
+value = "0x00010000"
+pos = 20
+light_pos = 5
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "1"
+value = "0x0000001e"
+pos = 28
+light_pos = 7
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "Q"
+value = "0x00000014"
+pos = 32
+light_pos = 8
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "A"
+value = "0x00000004"
+pos = 36
+light_pos = 9
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 1
+g = 1
+b = 255
+a = 1
+
+[[keys]]
+name = "Z"
+value = "0x0000001d"
+pos = 40
+light_pos = 10
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "L_Win"
+value = "0x00080000"
+pos = 44
+light_pos = 11
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "F1"
+value = "0x0000003a"
+pos = 48
+light_pos = 12
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "2"
+value = "0x0000001f"
+pos = 52
+light_pos = 13
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "W"
+value = "0x0000001a"
+pos = 56
+light_pos = 14
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 1
+g = 1
+b = 255
+a = 1
+
+[[keys]]
+name = "S"
+value = "0x00000016"
+pos = 60
+light_pos = 15
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 1
+g = 255
+b = 0
+a = 1
+
+[[keys]]
+name = "X"
+value = "0x0000001b"
+pos = 64
+light_pos = 16
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "L_Alt"
+value = "0x00040000"
+pos = 68
+light_pos = 17
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "F2"
+value = "0x0000003b"
+pos = 72
+light_pos = 18
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "3"
+value = "0x00000020"
+pos = 76
+light_pos = 19
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "E"
+value = "0x00000008"
+pos = 80
+light_pos = 20
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "D"
+value = "0x00000007"
+pos = 84
+light_pos = 21
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 1
+g = 1
+b = 255
+a = 1
+
+[[keys]]
+name = "C"
+value = "0x00000006"
+pos = 88
+light_pos = 22
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "F3"
+value = "0x0000003c"
+pos = 96
+light_pos = 24
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "4"
+value = "0x00000021"
+pos = 100
+light_pos = 25
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "R"
+value = "0x00000015"
+pos = 104
+light_pos = 26
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "F"
+value = "0x00000009"
+pos = 108
+light_pos = 27
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "V"
+value = "0x00000019"
+pos = 112
+light_pos = 28
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "F4"
+value = "0x0000003d"
+pos = 120
+light_pos = 30
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "5"
+value = "0x00000022"
+pos = 124
+light_pos = 31
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "T"
+value = "0x00000017"
+pos = 128
+light_pos = 32
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "G"
+value = "0x0000000a"
+pos = 132
+light_pos = 33
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "B"
+value = "0x00000005"
+pos = 136
+light_pos = 34
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "Space"
+value = "0x0000002c"
+pos = 140
+light_pos = 35
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "F5"
+value = "0x0000003e"
+pos = 144
+light_pos = 36
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "6"
+value = "0x00000023"
+pos = 148
+light_pos = 37
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "Y"
+value = "0x0000001c"
+pos = 152
+light_pos = 38
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "H"
+value = "0x0000000b"
+pos = 156
+light_pos = 39
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "N"
+value = "0x00000011"
+pos = 160
+light_pos = 40
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "F6"
+value = "0x0000003f"
+pos = 168
+light_pos = 42
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "7"
+value = "0x00000024"
+pos = 172
+light_pos = 43
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "U"
+value = "0x00000018"
+pos = 176
+light_pos = 44
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "J"
+value = "0x0000000d"
+pos = 180
+light_pos = 45
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "M"
+value = "0x00000010"
+pos = 184
+light_pos = 46
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "F7"
+value = "0x00000040"
+pos = 192
+light_pos = 48
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 255
+a = 1
+
+[[keys]]
+name = "8"
+value = "0x00000025"
+pos = 196
+light_pos = 49
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "I"
+value = "0x0000000c"
+pos = 200
+light_pos = 50
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "K"
+value = "0x0000000e"
+pos = 204
+light_pos = 51
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = ",<"
+value = "0x00000036"
+pos = 208
+light_pos = 52
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "Fn"
+value = "0x0d000000"
+pos = 212
+light_pos = 53
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "F8"
+value = "0x00000041"
+pos = 216
+light_pos = 54
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 255
+a = 1
+
+[[keys]]
+name = "9"
+value = "0x00000026"
+pos = 220
+light_pos = 55
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 255
+a = 1
+
+[[keys]]
+name = "O"
+value = "0x00000012"
+pos = 224
+light_pos = 56
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "L"
+value = "0x0000000f"
+pos = 228
+light_pos = 57
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = ".>"
+value = "0x00000037"
+pos = 232
+light_pos = 58
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "R_Ctrl"
+value = "0x00100000"
+pos = 236
+light_pos = 59
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "F9"
+value = "0x00000042"
+pos = 240
+light_pos = 60
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 255
+a = 1
+
+[[keys]]
+name = "0"
+value = "0x00000027"
+pos = 244
+light_pos = 61
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "P"
+value = "0x00000013"
+pos = 248
+light_pos = 62
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = ";:"
+value = "0x00000033"
+pos = 252
+light_pos = 63
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "/?"
+value = "0x00000038"
+pos = 256
+light_pos = 64
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "F10"
+value = "0x00000043"
+pos = 264
+light_pos = 66
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 255
+a = 1
+
+[[keys]]
+name = "-_"
+value = "0x0000002d"
+pos = 268
+light_pos = 67
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 1
+g = 255
+b = 0
+a = 1
+
+[[keys]]
+name = "[{"
+value = "0x0000002f"
+pos = 272
+light_pos = 68
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "Unknown"
+value = "0x00000034"
+pos = 276
+light_pos = 69
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "R_Shift"
+value = "0x00200000"
+pos = 280
+light_pos = 70
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "F11"
+value = "0x00000044"
+pos = 288
+light_pos = 72
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 255
+a = 1
+
+[[keys]]
+name = "=+"
+value = "0x0000002e"
+pos = 292
+light_pos = 73
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 1
+g = 255
+b = 0
+a = 1
+
+[[keys]]
+name = "}]"
+value = "0x00000030"
+pos = 296
+light_pos = 74
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "Left"
+value = "0x00000050"
+pos = 308
+light_pos = 77
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 1
+g = 1
+b = 255
+a = 1
+
+[[keys]]
+name = "F12"
+value = "0x00000045"
+pos = 312
+light_pos = 78
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 255
+a = 1
+
+[[keys]]
+name = "Backspace"
+value = "0x0000002a"
+pos = 316
+light_pos = 79
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 1
+g = 255
+b = 0
+a = 1
+
+[[keys]]
+name = '\ |'
+value = "0x00000031"
+pos = 320
+light_pos = 80
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "Enter"
+value = "0x00000028"
+pos = 324
+light_pos = 81
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "Up"
+value = "0x00000052"
+pos = 328
+light_pos = 82
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 1
+g = 1
+b = 255
+a = 1
+
+[[keys]]
+name = "Down"
+value = "0x00000051"
+pos = 332
+light_pos = 83
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 1
+g = 1
+b = 255
+a = 1
+
+[[keys]]
+name = "滚轮"
+value = "0x0700001d"
+pos = 336
+light_pos = 84
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "Delete"
+value = "0x0000004c"
+pos = 340
+light_pos = 85
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 1
+g = 255
+b = 255
+a = 1
+
+[[keys]]
+name = "PgUp"
+value = "0x0000004b"
+pos = 344
+light_pos = 86
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "PgDn"
+value = "0x0000004e"
+pos = 348
+light_pos = 87
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 255
+g = 0
+b = 0
+a = 1
+
+[[keys]]
+name = "Unknown"
+value = "0x0000004d"
+pos = 352
+light_pos = 88
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 0
+g = 0
+b = 0
+a = 0
+
+[[keys]]
+name = "Right"
+value = "0x0000004f"
+pos = 356
+light_pos = 89
+effect_pos = 0
+layer = 0
+key_type = "basic"
+
+[keys.color]
+r = 1
+g = 1
+b = 255
+a = 1
+
+
+
+

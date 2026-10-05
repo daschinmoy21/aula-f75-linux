@@ -1,5 +1,5 @@
 [package]
-name = "driver"
+name = "aula-f75"
 version = "0.1.0"
 edition = "2024"
 
@@ -11,3 +11,16 @@ log = "0.4.29"
 serde = { version = "1.0.228", features = ["derive"] }
 
 toml = "0.9.10"
+gpui = { version = "0.2.2", optional = true }
+
+[features]
+gui = ["dep:gpui"]
+
+[[bin]]
+name = "aula-f75-gui"
+path = "src/bin/gui.rs"
+required-features = ["gui"]
+
+# xattr 0.2.3 (via gpui -> zed-async-tar) uses libc::ENOATTR, which libc no longer exports on Linux.
+[patch.crates-io]
+xattr = { path = "vendor/xattr" }

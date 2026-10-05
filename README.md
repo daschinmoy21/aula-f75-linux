@@ -1,26 +1,15 @@
-# AULA F75 Linux Driver
+# aula-f75-linux
 
-Makes the AULA F75 keyboard usable on Linux, especially with a **Finnish keyboard layout** on an ANSI keyboard.
+Linux tooling for the AULA F75 keyboard (USB `258a:010c`), built on
+[Nokkasiili/aula-f75-linux](https://github.com/Nokkasiili/aula-f75-linux) (HID protocol + keymap/light writer).
 
-## Finnish Layout Fixes
+- `aula-f75 <config.toml>` apply keymap + lighting
+- `aula-f75 --dump <names.toml> <out.toml>` read the keyboard's keymap/colours (backup)
+- `aula-f75-gui [config.toml]` GPUI configurator (`cargo build --features gui`): click a key, pick function/colour, Save / Read from keyboard / Apply
 
-On a standard Finnish layout (`fi`), the `*` key is only available on an ISO key that doesn't physically exist on an ANSI keyboard. This driver:
+Dev shell: `nix develop`. Needs a hidraw udev rule, e.g.
+`SUBSYSTEM=="hidraw", ATTRS{idVendor}=="258a", ATTRS{idProduct}=="010c", MODE="0666"`.
+Settings only reach the keyboard over USB, not the 2.4GHz dongle.
 
-- Remaps **Delete** → `*` (via Keypad Asterisk)
-- Remaps right Fn → RAlt (AltGr) for easier special character access
-
-## Usage
-
-```bash
-# Build
-cargo build --release
-
-# Apply keymap
-sudo ./target/release/driver
-```
-
-Edit `test.toml` to customize key mappings.
-
-## How it Works
-
-Uses HID feature reports to read/write the keyboard's internal keymap. Supports key remapping across all layers, custom lighting, and device info queries.
+`data/default.toml` is the stock keymap + colours. `examples/finnish-ansi.toml` is upstream's Finnish-ANSI sample.
+`vendor/xattr` patches a gpui transitive dependency that no longer builds against current libc.
