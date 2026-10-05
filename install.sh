@@ -35,8 +35,8 @@ SUDO=
 RULE=/etc/udev/rules.d/70-aula-f75.rules
 
 reload_udev() {
-    $SUDO udevadm control --reload-rules
-    $SUDO udevadm trigger --subsystem-match=hidraw
+    { $SUDO udevadm control --reload-rules && $SUDO udevadm trigger --subsystem-match=hidraw; } \
+        || echo "warning: could not reload udev (no udev daemon?); replug the keyboard or reboot" >&2
 }
 
 if [ "$UNINSTALL" -eq 1 ]; then
