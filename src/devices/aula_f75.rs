@@ -1,5 +1,8 @@
 use crate::config::{KEYMAP_BYTES, LIGHT_BYTES, validate_keys};
-use crate::types::{BatteryStatus, DeviceInfo, Effect, Key, KeyLayer, KeyType, LightParam, Macro};
+use crate::types::{
+    BatteryStatus, Color, DeviceInfo, Effect, EffectColor, Key, KeyLayer, KeyType, LightParam,
+    Macro,
+};
 use crate::utils::{build_key_lookup, extract_color_from_lights, parse_hex};
 use anyhow::{Context, Result, anyhow, bail};
 use hidapi::{HidApi, HidDevice};
@@ -20,6 +23,8 @@ const LIGHT_PARAMS_LENGTH: usize = 34;
 const LIGHT_OFFSET: usize = 65;
 const PAYLOAD_LENGTH_BASIC_INFO: usize = 128;
 const PAYLOAD_LENGTH_KEYS: usize = 512;
+const PALETTE_BYTES: usize = 512;
+const EFFECT_COLOR_OFFSET: usize = 21; // Full report bytes 29..31, minus its 8-byte header.
 const RESET_DELAY_MS: u64 = 2000;
 
 // Command constants
@@ -81,6 +86,14 @@ impl super::Device for AulaF75 {
 
     fn set_light_mode(&self, effect: Effect) -> Result<()> {
         self.set_light_mode(effect)
+    }
+
+    fn get_effect_color(&self, effect: Effect) -> Result<EffectColor> {
+        self.get_effect_color(effect)
+    }
+
+    fn set_effect_color(&self, effect: Effect, color: &EffectColor) -> Result<()> {
+        self.set_effect_color(effect, color)
     }
 
     fn get_keys(&self, layer: KeyLayer) -> Result<Vec<u8>> {
@@ -246,20 +259,8 @@ impl AulaF75 {
     }
 
     pub fn get_basic_info(&self) -> Result<DeviceInfo> {
-        let tx = Self::frame_packet(&CMD_GET_BASIC_INFO);
-        self.hid_send(&tx)?;
-        let rx = self.hid_receive()?;
-
-        let buf = rx
-            .get(7..)
-            .ok_or_else(|| anyhow!("Basic info response too short"))?;
-        if buf.len() != PAYLOAD_LENGTH_BASIC_INFO {
-            bail!(
-                "Expected {} bytes, got {}",
-                PAYLOAD_LENGTH_BASIC_INFO,
-                buf.len()
-            );
-        }
+        let raw = self.get_basic_raw()?;
+        let buf = raw.as_slice();
 
         let light_mode = u16::from(buf[10]).try_into().unwrap_or(Effect::Off); // Fallback or handle error
 
@@ -348,7 +349,12 @@ impl AulaF75 {
     pub fn get_basic_raw(&self) -> Result<Vec<u8>> {
         let tx = Self::frame_packet(&CMD_GET_BASIC_INFO);
         self.hid_send(&tx)?;
+        thread::sleep(Duration::from_millis(20));
         let rx = self.hid_receive()?;
+        anyhow::ensure!(
+            rx.get(..6) == Some(CMD_GET_BASIC_INFO.as_slice()),
+            "Unexpected settings response header"
+        );
         let buf = rx
             .get(7..)
             .ok_or_else(|| anyhow!("Basic info response too short"))?;
@@ -472,10 +478,89 @@ impl AulaF75 {
         self.hid_send(&Self::frame_packet(&command))?;
         thread::sleep(Duration::from_millis(20));
         let rx = self.hid_receive()?;
-        Ok(rx
+        anyhow::ensure!(
+            rx.get(..5) == Some(command[..5].as_ref()),
+            "Unexpected colour profile header"
+        );
+        let palette = rx
             .get(7..)
-            .ok_or_else(|| anyhow!("Colour profile response too short"))?
-            .to_vec())
+            .ok_or_else(|| anyhow!("Colour profile response too short"))?;
+        anyhow::ensure!(
+            palette.len() == PALETTE_BYTES,
+            "Invalid colour profile length: {}",
+            palette.len()
+        );
+        Ok(palette.to_vec())
+    }
+
+    pub fn get_effect_color(&self, effect: Effect) -> Result<EffectColor> {
+        anyhow::ensure!(
+            effect.supports_color(),
+            "This effect has no selectable global colour"
+        );
+        let raw = self.get_basic_raw()?;
+        let palette = self.get_light_color()?;
+        let rgb = &palette[EFFECT_COLOR_OFFSET..EFFECT_COLOR_OFFSET + 3];
+        Ok(EffectColor {
+            color: Color::create(rgb[0], rgb[1], rgb[2]),
+            rainbow: raw[57 + 2 * effect as usize] & 15 == 7,
+        })
+    }
+
+    fn write_palette(&self, palette: &[u8]) -> Result<()> {
+        anyhow::ensure!(palette.len() == PALETTE_BYTES, "Invalid palette length");
+        let mut payload = vec![0; SEND_PAYLOAD_LENGTH];
+        payload[..7].copy_from_slice(&[10, 0, 0, 1, 0, 0, 2]);
+        payload[7..].copy_from_slice(palette);
+        payload[513..515].copy_from_slice(&[0x5a, 0xa5]);
+        self.hid_send(&Self::frame_packet(&payload))?;
+        thread::sleep(Duration::from_millis(20));
+        Ok(())
+    }
+
+    /// Set one global colour for an effect, preserving the separate custom per-key table.
+    pub fn set_effect_color(&self, effect: Effect, color: &EffectColor) -> Result<()> {
+        anyhow::ensure!(
+            effect.supports_color(),
+            "This effect has no selectable global colour"
+        );
+        let original = self.get_basic_raw()?;
+        let original_palette = self.get_light_color()?;
+        let (settings, palette) = effect_color_blocks(&original, &original_palette, effect, color)?;
+        let result = (|| -> Result<()> {
+            self.write_palette(&palette)?;
+            thread::sleep(Duration::from_millis(60));
+            // Read handshake, then latch the effect after committing its RGB profile.
+            let after_palette = self.get_basic_raw()?;
+            let changed: Vec<_> = (0..128)
+                .filter(|&i| after_palette[i] != original[i])
+                .map(|i| (i, original[i], after_palette[i]))
+                .collect();
+            anyhow::ensure!(
+                changed.is_empty(),
+                "Settings changed during colour apply: {changed:?}; refusing to overwrite them"
+            );
+            self.set_basic_raw(&settings)?;
+            let actual = self.get_light_color()?;
+            // The trailer is a command marker, not RGB configuration data.
+            anyhow::ensure!(
+                actual[..506] == palette[..506] && actual[508..] == palette[508..],
+                "Effect palette did not read back correctly"
+            );
+            anyhow::ensure!(
+                self.get_basic_raw()? == settings,
+                "Effect settings did not read back correctly"
+            );
+            Ok(())
+        })();
+        if let Err(error) = result {
+            self.write_palette(&original_palette)
+                .context("Failed to restore effect palette")?;
+            self.set_basic_raw(&original)
+                .context("Failed to restore effect settings")?;
+            return Err(error);
+        }
+        Ok(())
     }
 
     /// The legacy no-argument initializer overwrote the RGB table with hardcoded data.
@@ -572,6 +657,35 @@ fn patch_light_mode(raw: &mut [u8], effect: Effect) {
     raw[10] = effect as u8;
 }
 
+fn effect_color_blocks(
+    raw: &[u8],
+    palette: &[u8],
+    effect: Effect,
+    color: &EffectColor,
+) -> Result<(Vec<u8>, Vec<u8>)> {
+    anyhow::ensure!(
+        effect.supports_color(),
+        "This effect has no selectable global colour"
+    );
+    anyhow::ensure!(
+        raw.len() == PAYLOAD_LENGTH_BASIC_INFO && palette.len() == PALETTE_BYTES,
+        "Malformed effect configuration; refusing to write"
+    );
+    let mut raw = raw.to_vec();
+    let mut palette = palette.to_vec();
+    patch_light_mode(&mut raw, effect);
+    let flags = &mut raw[57 + 2 * effect as usize];
+    *flags = (*flags & 0xf0) | if color.rainbow { 7 } else { 0 };
+    // 98 effect RGB slots in four regions, separated by reserved 21-byte gaps.
+    // Payload offsets exclude the 8-byte feature-report header.
+    for (start, bytes) in [(21, 105), (147, 42), (210, 84), (315, 63)] {
+        for rgb in palette[start..start + bytes].chunks_exact_mut(3) {
+            rgb.copy_from_slice(&[color.color.r, color.color.g, color.color.b]);
+        }
+    }
+    Ok((raw, palette))
+}
+
 /// Read/patch/write helpers shared by the HID entry points and transport-free tests.
 fn set_keys_with(
     layer: KeyLayer,
@@ -633,6 +747,62 @@ fn set_custom_light_with(
 mod tests {
     use super::*;
     use crate::types::Color;
+
+    #[test]
+    fn global_reaction_colour_preserves_speed_brightness_and_other_bytes() {
+        let mut original = vec![11; 128];
+        original[80] = 9;
+        original[81] = 0x36;
+        let original_palette = vec![42; 512];
+        for rainbow in [false, true] {
+            let (settings, palette) = effect_color_blocks(
+                &original,
+                &original_palette,
+                Effect::Reaction,
+                &EffectColor {
+                    color: Color::create(10, 20, 30),
+                    rainbow,
+                },
+            )
+            .unwrap();
+            let mut expected_settings = original.clone();
+            expected_settings[9] = 0;
+            expected_settings[10] = 12;
+            expected_settings[81] = if rainbow { 0x37 } else { 0x30 };
+            assert_eq!(settings, expected_settings);
+            let mut expected_palette = original_palette.clone();
+            for index in 0..512 {
+                let channel = match index {
+                    21..=125 => Some((index - 21) % 3),
+                    147..=188 => Some((index - 147) % 3),
+                    210..=293 => Some((index - 210) % 3),
+                    315..=377 => Some((index - 315) % 3),
+                    _ => None,
+                };
+                if let Some(channel) = channel {
+                    expected_palette[index] = [10, 20, 30][channel];
+                }
+            }
+            assert_eq!(palette, expected_palette);
+        }
+    }
+
+    #[test]
+    fn unsupported_effects_and_malformed_colour_reads_are_rejected() {
+        let color = EffectColor {
+            color: Color::create(1, 2, 3),
+            rainbow: false,
+        };
+        for effect in [Effect::Off, Effect::Custom, Effect::Rainbow, Effect::Mode19] {
+            assert!(effect_color_blocks(&[0; 128], &[0; 512], effect, &color).is_err());
+        }
+        for raw in [vec![], vec![0; 127], vec![0; 129]] {
+            assert!(effect_color_blocks(&raw, &[0; 512], Effect::Reaction, &color).is_err());
+        }
+        for palette in [vec![], vec![0; 511], vec![0; 513]] {
+            assert!(effect_color_blocks(&[0; 128], &palette, Effect::Reaction, &color).is_err());
+        }
+    }
 
     fn key(layer: KeyLayer) -> Key {
         Key {

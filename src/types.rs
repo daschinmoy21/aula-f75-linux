@@ -29,6 +29,22 @@ pub enum Effect {
     Custom = 21,
 }
 
+impl Effect {
+    /// Firmware modes with a selectable single-colour palette (Aula-Manager reference).
+    pub fn supports_color(self) -> bool {
+        matches!(
+            self as u16,
+            1 | 2 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 18
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EffectColor {
+    pub color: Color,
+    pub rainbow: bool,
+}
+
 impl TryFrom<u16> for Effect {
     type Error = ();
 

@@ -1,7 +1,8 @@
 //! GPUI configurator: click a key, pick its function and colour, then apply to the keyboard.
-use aula_f75::types::{Color, Effect, Key, KeyLayer};
+use aula_f75::types::{Color, Effect, EffectColor, Key, KeyLayer};
 use aula_f75::{
-    DEFAULT_CONFIG, connect, parse_config, parse_profile, serialize_profile, validate_keys,
+    DEFAULT_CONFIG, connect, parse_config, parse_profile, serialize_profile_with_color,
+    validate_keys,
 };
 use gpui::{
     App, Application, BoxShadow, Context, FocusHandle, Hsla, KeyDownEvent, Window, WindowOptions,
@@ -248,8 +249,13 @@ fn preview(effect: Effect, x: f32, y: f32, t: f32, base: (u8, u8, u8)) -> (u8, u
     );
     let press_hue = hash(epoch as i32, 3) * 360.0;
     match effect {
-        Effect::Off | Effect::Mode1 | Effect::Mode9 | Effect::Mode14 | Effect::Mode16
-        | Effect::Mode18 | Effect::Mode19 => (0, 0, 0),
+        Effect::Off
+        | Effect::Mode1
+        | Effect::Mode9
+        | Effect::Mode14
+        | Effect::Mode16
+        | Effect::Mode18
+        | Effect::Mode19 => (0, 0, 0),
         Effect::Custom => base,
         Effect::Respire => scale(hsv(210.0, 0.8, 1.0), 0.5 + 0.5 * (t * 2.0).sin()),
         // whole board one colour, cycling
@@ -271,7 +277,11 @@ fn preview(effect: Effect, x: f32, y: f32, t: f32, base: (u8, u8, u8)) -> (u8, u
                 if (y - ky).abs() < 0.5 {
                     let a = t - e as f32 * PERIOD;
                     let (d, front) = ((x - kx).abs(), a * 22.0);
-                    let k = if d <= front { 1.0 - (front - d) / 4.0 } else { 0.0 };
+                    let k = if d <= front {
+                        1.0 - (front - d) / 4.0
+                    } else {
+                        0.0
+                    };
                     let k = k.clamp(0.0, 1.0) * (1.0 - a / 1.0).max(0.0);
                     if k > best.0 {
                         best = (k, hash(e, 23) * 360.0);
@@ -362,6 +372,8 @@ struct Configurator {
     effect: Effect,
     started: Instant,
     effect_dirty: bool,
+    effect_color: EffectColor,
+    effect_color_dirty: bool,
     custom: Vec<u32>,
     picker: ColorPicker,
     orig_keys: Vec<Key>,
@@ -436,6 +448,11 @@ impl Configurator {
             effect: Effect::Off,
             started: Instant::now(),
             effect_dirty: false,
+            effect_color: EffectColor {
+                color: Color::create(255, 255, 255),
+                rainbow: true,
+            },
+            effect_color_dirty: false,
             custom: Vec::new(),
             picker: ColorPicker::default(),
             orig_keys: Vec::new(),
@@ -462,63 +479,82 @@ impl Configurator {
             .map(|(_, n)| n.as_str())
     }
 
+    fn editing_effect_color(&self) -> bool {
+        self.tab == Tab::Lighting && self.effect.supports_color()
+    }
+
+    fn edited_color(&self) -> Option<(u8, u8, u8)> {
+        let c = if self.editing_effect_color() {
+            &self.effect_color.color
+        } else if self.tab == Tab::Lighting && self.effect != Effect::Custom {
+            return None;
+        } else {
+            &self.keys.get(self.selected?)?.color
+        };
+        Some((c.r, c.g, c.b))
+    }
+
     fn sync_picker(&mut self) {
-        if let Some(i) = self.selected {
-            let c = &self.keys[i].color;
-            self.picker.sync_rgb(c.r, c.g, c.b);
+        if let Some((r, g, b)) = self.edited_color() {
+            self.picker.sync_rgb(r, g, b);
         }
     }
 
-    fn mark_colour_edit(&mut self) {
-        self.effect = Effect::Custom;
-        self.effect_dirty = true;
-        self.status = "Colour edited: Apply enables Custom per-key lighting".into();
+    fn set_edited_color(&mut self, color: Color) {
+        if self.editing_effect_color() {
+            self.effect_color.color = color;
+            self.effect_color.rainbow = false;
+            self.effect_color_dirty = true;
+            self.effect_dirty = true;
+            self.status =
+                "Effect colour edited: Apply uses this colour for all reacting keys".into();
+        } else if let Some(i) = self.selected {
+            if self.tab == Tab::Lighting && self.effect != Effect::Custom {
+                return;
+            }
+            self.keys[i].color = color;
+            self.effect = Effect::Custom;
+            self.effect_dirty = true;
+            self.status = "Colour edited: Apply enables Custom per-key lighting".into();
+        }
     }
 
     fn update_picker_color(&mut self) {
-        if let Some(i) = self.selected {
-            let (r, g, b) = self.picker.rgb();
-            self.keys[i].color = Color::create(r, g, b);
-            self.mark_colour_edit();
-        }
+        let (r, g, b) = self.picker.rgb();
+        self.set_edited_color(Color::create(r, g, b));
     }
 
     fn set_color(&mut self, rgb_val: u32) {
-        if let Some(i) = self.selected {
-            let (r, g, b) = ((rgb_val >> 16) as u8, (rgb_val >> 8) as u8, rgb_val as u8);
-            self.keys[i].color = Color::create(r, g, b);
-            self.mark_colour_edit();
-            self.sync_picker();
-        }
+        self.set_edited_color(Color::create(
+            (rgb_val >> 16) as u8,
+            (rgb_val >> 8) as u8,
+            rgb_val as u8,
+        ));
+        self.sync_picker();
     }
 
     fn set_channel(&mut self, ch: usize, v: u8) {
-        if let Some(i) = self.selected {
-            let c = &mut self.keys[i].color;
+        if let Some((r, g, b)) = self.edited_color() {
             let (r, g, b) = match ch {
-                0 => (v, c.g, c.b),
-                1 => (c.r, v, c.b),
-                _ => (c.r, c.g, v),
+                0 => (v, g, b),
+                1 => (r, v, b),
+                _ => (r, g, v),
             };
-            *c = Color::create(r, g, b);
-            self.mark_colour_edit();
+            self.set_edited_color(Color::create(r, g, b));
             self.sync_picker();
         }
     }
 
-    fn nudge(&mut self, ch: usize, delta: i16) {
-        if let Some(i) = self.selected {
-            let c = &mut self.keys[i].color;
-            let f = |x: u8| (x as i16 + delta).clamp(0, 255) as u8;
-            let (r, g, b) = match ch {
-                0 => (f(c.r), c.g, c.b),
-                1 => (c.r, f(c.g), c.b),
-                _ => (c.r, c.g, f(c.b)),
-            };
-            *c = Color::create(r, g, b);
-            self.mark_colour_edit();
-            self.sync_picker();
+    fn choose_effect(&mut self, effect: Effect) {
+        self.effect = effect;
+        if effect.supports_color() && !self.effect_color_dirty {
+            match connect().and_then(|d| d.get_effect_color(effect)) {
+                Ok(color) => self.effect_color = color,
+                Err(e) => self.status = format!("Could not read effect colour: {e:#}"),
+            }
         }
+        self.effect_dirty = true;
+        self.sync_picker();
     }
 
     /// Re-read battery and (unless you have an unapplied choice) the current lighting effect.
@@ -533,6 +569,12 @@ impl Configurator {
         if !self.effect_dirty {
             if let Ok(info) = d.get_basic_info() {
                 self.effect = info.light_mode;
+                if self.effect.supports_color() {
+                    if let Ok(color) = d.get_effect_color(self.effect) {
+                        self.effect_color = color;
+                    }
+                }
+                self.sync_picker();
             }
         }
     }
@@ -549,7 +591,11 @@ impl Configurator {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let s = serialize_profile(&self.keys, Some(self.effect as u16))?;
+        let color = self
+            .effect
+            .supports_color()
+            .then(|| self.effect_color.clone());
+        let s = serialize_profile_with_color(&self.keys, Some(self.effect as u16), color)?;
         Ok(std::fs::write(path, s)?)
     }
 
@@ -571,12 +617,16 @@ impl Configurator {
         {
             Ok(p) => {
                 self.keys = p.keys;
-                self.orig_keys = self.keys.clone();
                 if let Some(e) = p.effect.and_then(|e| Effect::try_from(e).ok()) {
                     self.effect = e;
-                    self.effect_dirty = false;
+                    self.effect_dirty = true;
+                }
+                self.effect_color_dirty = p.effect_color.is_some();
+                if let Some(color) = p.effect_color {
+                    self.effect_color = color;
                 }
                 self.selected = None;
+                self.sync_picker();
                 self.refresh_device();
                 self.status = format!("Reloaded {}", path.display());
             }
@@ -603,6 +653,11 @@ impl Configurator {
                     self.effect = e;
                     self.effect_dirty = true;
                 }
+                self.effect_color_dirty = p.effect_color.is_some();
+                if let Some(color) = p.effect_color {
+                    self.effect_color = color;
+                }
+                self.sync_picker();
                 // everything differs from the keyboard until applied
                 self.orig_keys.clear();
                 self.active_profile = Some(name.to_string());
@@ -682,6 +737,7 @@ impl Configurator {
             return;
         }
         let effect = self.effect;
+        let effect_color = self.effect_color.clone();
         self.status = match connect().and_then(|d| {
             if keys_changed {
                 d.set_keys(KeyLayer::Normal, &keys)?;
@@ -690,13 +746,18 @@ impl Configurator {
                 d.set_custom_light(&keys)?;
             }
             if effect_changed {
-                d.set_light_mode(effect)?;
+                if effect.supports_color() {
+                    d.set_effect_color(effect, &effect_color)?;
+                } else {
+                    d.set_light_mode(effect)?;
+                }
             }
             Ok(())
         }) {
             Ok(()) => {
                 self.orig_keys = keys;
                 self.effect_dirty = false;
+                self.effect_color_dirty = false;
                 format!(
                     "Applied: {}",
                     [
@@ -722,6 +783,7 @@ impl Configurator {
                     self.keys = k;
                     self.orig_keys = self.keys.clone();
                     self.effect_dirty = false;
+                    self.effect_color_dirty = false;
                     self.refresh_device();
                     self.selected = None;
                     "Read keymap + colours from keyboard".into()
@@ -826,7 +888,20 @@ impl Render for Configurator {
         for (i, px_x, px_y, kw) in placed {
             let k = &self.keys[i];
             let c = &k.color;
-            let base = (c.r, c.g, c.b);
+            let base = if lighting && self.effect.supports_color() {
+                if self.effect_color.rainbow {
+                    hsv(
+                        self.started.elapsed().as_secs_f32() * 80.0 + px_x * 15.0,
+                        1.0,
+                        1.0,
+                    )
+                } else {
+                    let c = &self.effect_color.color;
+                    (c.r, c.g, c.b)
+                }
+            } else {
+                (c.r, c.g, c.b)
+            };
             let (lr, lg, lb) = if lighting {
                 preview(
                     self.effect,
@@ -837,6 +912,20 @@ impl Render for Configurator {
                 )
             } else {
                 base
+            };
+            let (lr, lg, lb) = if lighting
+                && self.effect.supports_color()
+                && !self.effect_color.rainbow
+                && !matches!(self.effect, Effect::Reaction)
+            {
+                let brightness = lr.max(lg).max(lb) as f32 / 255.0;
+                (
+                    (base.0 as f32 * brightness) as u8,
+                    (base.1 as f32 * brightness) as u8,
+                    (base.2 as f32 * brightness) as u8,
+                )
+            } else {
+                (lr, lg, lb)
             };
             let led_val = ((lr as u32) << 16) | ((lg as u32) << 8) | lb as u32;
             let label = self
@@ -919,16 +1008,30 @@ impl Render for Configurator {
             );
         }
 
-        let sel_color = self.selected.map(|i| {
-            let c = &self.keys[i].color;
-            (c.r, c.g, c.b)
-        });
+        let sel_color = self.edited_color();
 
         // ---- colour editor (selected key) ----
         let colour_block = {
             let mut b = div().flex().flex_col().gap_3().min_w(px(280.0));
+            if self.editing_effect_color() {
+                b = b.child(section("Effect colour (all keys)"))
+                    .child(div().flex().gap_2().children([(false, "Single colour"), (true, "Rainbow")].into_iter().map(|(rainbow, label)| {
+                        small_button(("effect-colour-mode", usize::from(rainbow)), label)
+                            .bg(rgb(if self.effect_color.rainbow == rainbow { 0x16233d } else { SURFACE }))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.effect_color.rainbow = rainbow;
+                                this.effect_color_dirty = true;
+                                this.effect_dirty = true;
+                                this.status = "Effect colour mode edited: press Apply".into();
+                                cx.notify();
+                            }))
+                    })))
+                    .child(div().text_xs().text_color(rgb(MUTED_FG)).child("Choose a colour for the effect, or Rainbow. The custom per-key colours are kept."));
+            } else if self.tab == Tab::Lighting && self.effect != Effect::Custom {
+                b = b.child(div().text_sm().text_color(rgb(MUTED_FG)).child("This effect uses its own firmware colours. Choose Custom to edit individual keys."));
+            }
             match sel_color {
-                None => {
+                None if self.tab != Tab::Lighting || self.effect == Effect::Custom => {
                     b = b.child(
                         div()
                             .text_sm()
@@ -936,6 +1039,7 @@ impl Render for Configurator {
                             .child("Select a key to edit its colour."),
                     );
                 }
+                None => {}
                 Some((r, g, bl)) => {
                     let cur = ((r as u32) << 16) | ((g as u32) << 8) | bl as u32;
                     let swatch = |id: &'static str, i: usize, p: u32, on: bool| {
@@ -1139,46 +1243,48 @@ impl Render for Configurator {
             .iter()
             .find(|(e, _)| *e == self.effect)
             .map_or("", |(_, n)| *n);
-        let mut effects_card = card()
-            .w_full()
-            .flex()
-            .flex_col()
-            .gap_4()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_3()
-                    .child(section("Light effect"))
-                    .child(
-                        div()
-                            .text_lg()
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .child(cur_name),
-                    )
-                    .child(
-                        div()
-                            .px_2()
-                            .rounded_full()
-                            .text_xs()
-                            .text_color(rgb(if self.effect_dirty { 0xfbbf24 } else { 0x4ade80 }))
-                            .bg(rgb(if self.effect_dirty { 0x3a2a0d } else { 0x133324 }))
-                            .child(if self.effect_dirty {
-                                "not applied"
-                            } else {
-                                "on keyboard"
-                            }),
-                    ),
-            );
+        let mut effects_card = card().w_full().flex().flex_col().gap_4().child(
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(section("Light effect"))
+                .child(
+                    div()
+                        .text_lg()
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .child(cur_name),
+                )
+                .child(
+                    div()
+                        .px_2()
+                        .rounded_full()
+                        .text_xs()
+                        .text_color(rgb(if self.effect_dirty {
+                            0xfbbf24
+                        } else {
+                            0x4ade80
+                        }))
+                        .bg(rgb(if self.effect_dirty {
+                            0x3a2a0d
+                        } else {
+                            0x133324
+                        }))
+                        .child(if self.effect_dirty {
+                            "not applied"
+                        } else {
+                            "on keyboard"
+                        }),
+                ),
+        );
         for (gi, (group, members)) in EFFECT_GROUPS.iter().enumerate() {
             effects_card = effects_card.child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(section(group))
-                    .child(div().flex().flex_wrap().gap_2().children(members.iter().map(
-                        |&ei| {
+                div().flex().flex_col().gap_2().child(section(group)).child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap_2()
+                        .children(members.iter().map(|&ei| {
                             let (eff, name) = EFFECTS[ei];
                             let on = self.effect == eff;
                             div()
@@ -1198,8 +1304,7 @@ impl Render for Configurator {
                                 .cursor_pointer()
                                 .child(name)
                                 .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.effect = eff;
-                                    this.effect_dirty = true;
+                                    this.choose_effect(eff);
                                     cx.notify();
                                 }))
                         })),
@@ -1325,6 +1430,7 @@ impl Configurator {
                                         .child(name)
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.tab = tab;
+                                            this.sync_picker();
                                             cx.notify();
                                         }))
                                 }),
@@ -1530,8 +1636,8 @@ impl Configurator {
         };
         if self.active_profile.is_some() {
             profiles = profiles.child(
-                Self::item(("profile-del", 0), "Delete this profile", false).on_click(
-                    cx.listener(|this, _, _, cx| {
+                Self::item(("profile-del", 0), "Delete this profile", false).on_click(cx.listener(
+                    |this, _, _, cx| {
                         this.delete_profile();
                         cx.notify();
                     },
@@ -1623,7 +1729,9 @@ fn main() {
                             .timer(Duration::from_millis(33))
                             .await;
                         let alive = this.update(cx, |s: &mut Configurator, cx| {
-                            if s.tab == Tab::Lighting && !matches!(s.effect, Effect::Custom | Effect::Off) {
+                            if s.tab == Tab::Lighting
+                                && !matches!(s.effect, Effect::Custom | Effect::Off)
+                            {
                                 cx.notify();
                             }
                         });

@@ -7,6 +7,31 @@ fn key() -> Key {
 }
 
 #[test]
+fn global_effect_colours_round_trip_and_require_a_colour_effect() {
+    use aula_f75::serialize_profile_with_color;
+    use aula_f75::types::EffectColor;
+    let color = EffectColor {
+        color: aula_f75::types::Color::create(10, 20, 30),
+        rainbow: false,
+    };
+    let keys = vec![key()];
+    let text = serialize_profile_with_color(&keys, Some(12), Some(color.clone())).unwrap();
+    let profile = parse_profile(&text).unwrap();
+    assert_eq!(profile.effect_color, Some(color.clone()));
+    assert_eq!(profile.keys, keys);
+    for effect in [None, Some(0), Some(3), Some(21), Some(65535)] {
+        let text = serialize_profile_with_color(&keys, effect, Some(color.clone())).unwrap();
+        assert!(parse_profile(&text).is_err());
+    }
+    assert!(
+        parse_profile(&serialize_config(&keys).unwrap())
+            .unwrap()
+            .effect_color
+            .is_none()
+    );
+}
+
+#[test]
 fn hexadecimal_values_are_strict_and_zero_is_valid() {
     for value in [
         "",

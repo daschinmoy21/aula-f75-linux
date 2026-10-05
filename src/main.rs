@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow};
-use aula_f75::types::KeyLayer;
-use aula_f75::{connect, parse_config, serialize_config};
+use aula_f75::types::{Effect, KeyLayer};
+use aula_f75::{connect, parse_profile, serialize_config};
 use std::fs;
 
 const USAGE: &str = "usage: aula-f75 <config.toml>                    apply keymap + lighting\n       aula-f75 --dump <names.toml> <out.toml>   read keymap + colours from the keyboard";
@@ -12,7 +12,9 @@ fn main() -> Result<()> {
         [p] => (false, p),
         _ => return Err(anyhow!(USAGE)),
     };
-    let keys = parse_config(&fs::read_to_string(cfg_path).context("Failed to read config file")?)?;
+    let profile =
+        parse_profile(&fs::read_to_string(cfg_path).context("Failed to read config file")?)?;
+    let keys = profile.keys;
     let device = connect()?;
 
     if dump {
@@ -25,6 +27,14 @@ fn main() -> Result<()> {
     println!("Writing keymap...");
     device.set_keys(KeyLayer::Normal, &keys)?;
     device.set_custom_light(&keys)?;
+    if let Some(id) = profile.effect {
+        let effect = Effect::try_from(id).map_err(|_| anyhow!("Unsupported effect {id}"))?;
+        if let Some(color) = profile.effect_color {
+            device.set_effect_color(effect, &color)?;
+        } else {
+            device.set_light_mode(effect)?;
+        }
+    }
     println!("Done.");
     Ok(())
 }

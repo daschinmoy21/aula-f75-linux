@@ -7,7 +7,7 @@ pub use config::validate_keys;
 
 use anyhow::{Context, Result, anyhow};
 use devices::{Device, DeviceDriver, aula_f75::AulaF75Driver};
-use types::Key;
+use types::{EffectColor, Key};
 
 /// Stock keymap + colours; also the source of key names when reading from the keyboard.
 pub const DEFAULT_CONFIG: &str = include_str!("../data/default.toml");
@@ -18,6 +18,9 @@ pub struct KeysWrapper {
     /// Lighting effect id (profiles only; absent in plain keymap files).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effect: Option<u16>,
+    /// Global firmware effect colour; absent in legacy profiles and per-key-only files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect_color: Option<EffectColor>,
 }
 
 pub fn parse_config(s: &str) -> Result<Vec<Key>> {
@@ -33,6 +36,15 @@ pub fn parse_profile(s: &str) -> Result<KeysWrapper> {
             "Unsupported lighting effect {effect}"
         );
     }
+    if profile.effect_color.is_some() {
+        anyhow::ensure!(
+            profile
+                .effect
+                .and_then(|id| types::Effect::try_from(id).ok())
+                .is_some_and(types::Effect::supports_color),
+            "Global effect colour requires a supported colour effect"
+        );
+    }
     Ok(profile)
 }
 
@@ -41,9 +53,18 @@ pub fn serialize_config(keys: &[Key]) -> Result<String> {
 }
 
 pub fn serialize_profile(keys: &[Key], effect: Option<u16>) -> Result<String> {
+    serialize_profile_with_color(keys, effect, None)
+}
+
+pub fn serialize_profile_with_color(
+    keys: &[Key],
+    effect: Option<u16>,
+    effect_color: Option<EffectColor>,
+) -> Result<String> {
     Ok(toml::to_string_pretty(&KeysWrapper {
         keys: keys.to_vec(),
         effect,
+        effect_color,
     })?)
 }
 

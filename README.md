@@ -49,6 +49,10 @@ and is not yet implemented or tested in this app. Bluetooth configuration is not
 `data/default.toml` is the stock keymap + colours. `examples/finnish-ansi.toml` is upstream's Finnish-ANSI sample.
 `vendor/xattr` patches a gpui transitive dependency that no longer builds against current libc.
 
+The Lighting tab offers a global colour and Rainbow choice for colour-capable
+effects. Custom edits individual keys. See [effect colours](docs/effect-colours.md)
+for the protocol and hardware verification status.
+
 Configs are validated before device writes. Partial keymaps and custom colours preserve
 untouched device bytes; failed or malformed reads abort the write. Invalid hex values,
 positions, duplicate slots and unsupported macros report errors. See
@@ -75,5 +79,8 @@ Upstream licensing remains unresolved as of 2026-10-05; see the
   and implementation identified the separate Custom enable flag and planar RGB
   write sequence used to fix per-key lighting on our wired F75. It also documents
   the separate 2.4GHz lighting protocol, providing a reference for future wireless support.
+- [not-ayan/openaula](https://github.com/not-ayan/openaula): its RGB implementation
+  documents the separated effect-colour regions and the colour-before-settings
+  sequence used for global effect colours.
 - [xntebli/aula-f75-linux](https://github.com/xntebli/aula-f75-linux): documents running the official Windows configurator
   under Wine and the wired USB setup used by that workflow.
