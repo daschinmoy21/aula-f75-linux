@@ -357,6 +357,9 @@ impl AulaF75 {
         payload
     }
 
+    /// DANGEROUS: rebuilds the whole settings block from a few fields plus hardcoded bytes and can
+    /// corrupt it (this broke Fn+combos, see docs/fn-layer-fix.md). Use `set_light_mode` or
+    /// `get_basic_raw` + `set_basic_raw` (read-modify-write) instead.
     pub fn set_basic_info(&self, info: &DeviceInfo) -> Result<()> {
         let tx = Self::frame_packet(&Self::legacy_basic_payload(info));
         self.hid_send(&tx)?;
@@ -403,8 +406,13 @@ impl AulaF75 {
     }
 
     pub fn get_keys(&self, layer: KeyLayer) -> Result<Vec<u8>> {
+        self.get_keys_raw_layer(layer as u8)
+    }
+
+    /// Read a keymap layer by raw id (the keyboard may have more layers than `KeyLayer` names).
+    pub fn get_keys_raw_layer(&self, layer: u8) -> Result<Vec<u8>> {
         let mut cmd = CMD_GET_KEYS;
-        cmd[1] = layer as u8;
+        cmd[1] = layer;
         let tx = Self::frame_packet(&cmd);
         self.hid_send(&tx)?;
         let rx = self.hid_receive()?;
