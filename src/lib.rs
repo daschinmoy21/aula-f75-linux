@@ -1,7 +1,9 @@
 //! AULA F75 driver library: HID protocol, key/light types, config (de)serialisation.
+mod config;
 pub mod devices;
 pub mod types;
 pub mod utils;
+pub use config::validate_keys;
 
 use anyhow::{Context, Result, anyhow};
 use devices::{Device, DeviceDriver, aula_f75::AulaF75Driver};
@@ -23,7 +25,15 @@ pub fn parse_config(s: &str) -> Result<Vec<Key>> {
 }
 
 pub fn parse_profile(s: &str) -> Result<KeysWrapper> {
-    toml::from_str::<KeysWrapper>(s).context("Failed to parse config")
+    let profile = toml::from_str::<KeysWrapper>(s).context("Failed to parse config")?;
+    validate_keys(&profile.keys)?;
+    if let Some(effect) = profile.effect {
+        anyhow::ensure!(
+            types::Effect::try_from(effect).is_ok(),
+            "Unsupported lighting effect {effect}"
+        );
+    }
+    Ok(profile)
 }
 
 pub fn serialize_config(keys: &[Key]) -> Result<String> {

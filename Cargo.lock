@@ -479,6 +479,7 @@ dependencies = [
  "env_logger",
  "gpui",
  "hidapi",
+ "image",
  "log",
  "serde",
  "toml 0.9.10+spec-1.1.0",

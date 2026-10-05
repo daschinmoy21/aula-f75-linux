@@ -25,6 +25,8 @@ pub enum Effect {
     CenterBurst = 17,
     Mode18 = 18,
     Mode19 = 19,
+    /// Per-key RGB mode; requires a separate custom-table enable flag.
+    Custom = 21,
 }
 
 impl TryFrom<u16> for Effect {
@@ -33,21 +35,50 @@ impl TryFrom<u16> for Effect {
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         use Effect::*;
         const ALL: [Effect; 20] = [
-            Off, Mode1, Respire, Rainbow, FlashAway, Raindrops, GradientDrift, RipplesShining,
-            StarsTwinkle, Mode9, RetroSnake, SineWave, Reaction, Blossoming, Mode14,
-            ColorfulWaterfall, Mode16, CenterBurst, Mode18, Mode19,
+            Off,
+            Mode1,
+            Respire,
+            Rainbow,
+            FlashAway,
+            Raindrops,
+            GradientDrift,
+            RipplesShining,
+            StarsTwinkle,
+            Mode9,
+            RetroSnake,
+            SineWave,
+            Reaction,
+            Blossoming,
+            Mode14,
+            ColorfulWaterfall,
+            Mode16,
+            CenterBurst,
+            Mode18,
+            Mode19,
         ];
+        if value == Self::Custom as u16 {
+            return Ok(Self::Custom);
+        }
         ALL.get(value as usize).copied().ok_or(())
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone, Default, Serialize)]
+#[derive(Debug, PartialEq, Copy, Clone, Default)]
 #[repr(u8)]
 pub enum KeyLayer {
     #[default]
     Normal = 0,
     Fn = 1,
     Fn1 = 2,
+}
+
+impl Serialize for KeyLayer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_u8(*self as u8)
+    }
 }
 
 impl TryFrom<u8> for KeyLayer {

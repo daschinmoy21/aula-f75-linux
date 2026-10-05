@@ -12,9 +12,10 @@ serde = { version = "1.0.228", features = ["derive"] }
 
 toml = "0.9.10"
 gpui = { version = "0.2.2", optional = true }
+image = { version = "0.25.10", default-features = false, optional = true }
 
 [features]
-gui = ["dep:gpui"]
+gui = ["dep:gpui", "dep:image"]
 
 [[bin]]
 name = "aula-f75-gui"

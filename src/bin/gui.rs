@@ -1,6 +1,8 @@
 //! GPUI configurator: click a key, pick its function and colour, then apply to the keyboard.
 use aula_f75::types::{Color, Effect, Key, KeyLayer};
-use aula_f75::{DEFAULT_CONFIG, connect, parse_config, parse_profile, serialize_profile};
+use aula_f75::{
+    DEFAULT_CONFIG, connect, parse_config, parse_profile, serialize_profile, validate_keys,
+};
 use gpui::{
     App, Application, BoxShadow, Context, FocusHandle, Hsla, KeyDownEvent, Window, WindowOptions,
     div, point, prelude::*, px, rgb,
@@ -10,6 +12,11 @@ use std::time::{Duration, Instant};
 
 /// Key unit in px. Physical layout below is keyed by `light_pos` (matrix index).
 const U: f32 = 54.0;
+const FUNCTION_ROW_GAP: f32 = 0.3;
+
+#[path = "gui/color_picker.rs"]
+mod color_picker;
+use color_picker::ColorPicker;
 
 const FINNISH_ANSI: &str = include_str!("../../examples/finnish-ansi.toml");
 
@@ -22,6 +29,8 @@ enum Cell {
 }
 
 /// F75 physical layout: rows of (light_pos, width in units) with gaps.
+// Function-row group gaps follow the top-down F75 product photo:
+// https://aulagear.com/cdn/shop/files/203A5822.jpg
 fn layout() -> Vec<Vec<Cell>> {
     use Cell::{Gap, K};
     let ks = |ps: &[usize], w: f32| -> Vec<Cell> { ps.iter().map(|&p| K(p, w)).collect() };
@@ -30,8 +39,12 @@ fn layout() -> Vec<Vec<Cell>> {
         cat(vec![
             ks(&[0], 1.0),
             vec![Gap(1.0)],
-            ks(&[12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78], 1.0),
-            vec![Gap(1.0)],
+            ks(&[12, 18, 24, 30], 1.0),
+            vec![Gap(0.25)],
+            ks(&[36, 42, 48, 54], 1.0),
+            vec![Gap(0.25)],
+            ks(&[60, 66, 72, 78], 1.0),
+            vec![Gap(0.5)],
             ks(&[84], 1.0),
         ]),
         cat(vec![
@@ -60,8 +73,8 @@ fn layout() -> Vec<Vec<Cell>> {
         cat(vec![
             ks(&[5, 11, 17], 1.25),
             ks(&[35], 6.25),
-            ks(&[53, 59], 1.0),
-            vec![Gap(1.0)],
+            ks(&[53, 59], 1.25),
+            vec![Gap(0.5)],
             ks(&[77, 83, 89], 1.0),
         ]),
     ]
@@ -144,7 +157,7 @@ enum Tab {
 }
 
 /// Picker entries, indexed by firmware mode id (see `Effect`).
-const EFFECTS: [(Effect, &str); 20] = [
+const EFFECTS: [(Effect, &str); 21] = [
     (Effect::Off, "Off"),
     (Effect::Mode1, "Mode 1"),
     (Effect::Respire, "Respire"),
@@ -165,15 +178,19 @@ const EFFECTS: [(Effect, &str); 20] = [
     (Effect::CenterBurst, "Center burst"),
     (Effect::Mode18, "Mode 18"),
     (Effect::Mode19, "Mode 19"),
+    (Effect::Custom, "Custom per-key"),
 ];
 
 /// Indices into `EFFECTS`, grouped for the picker.
 const EFFECT_GROUPS: [(&str, &[usize]); 5] = [
-    ("Basic", &[0]),
+    ("Basic", &[0, 20]),
     ("Flowing", &[2, 3, 6, 11, 13, 15, 17]),
     ("Animated", &[5, 8, 10]),
     ("Reactive (press keys)", &[4, 7, 12]),
-    ("Unverified (showed no light in testing)", &[1, 9, 14, 16, 18, 19]),
+    (
+        "Unverified (showed no light in testing)",
+        &[1, 9, 14, 16, 18, 19],
+    ),
 ];
 
 fn hsv(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
@@ -233,6 +250,7 @@ fn preview(effect: Effect, x: f32, y: f32, t: f32, base: (u8, u8, u8)) -> (u8, u
     match effect {
         Effect::Off | Effect::Mode1 | Effect::Mode9 | Effect::Mode14 | Effect::Mode16
         | Effect::Mode18 | Effect::Mode19 => (0, 0, 0),
+        Effect::Custom => base,
         Effect::Respire => scale(hsv(210.0, 0.8, 1.0), 0.5 + 0.5 * (t * 2.0).sin()),
         // whole board one colour, cycling
         Effect::Rainbow => hsv(t * 50.0, 1.0, 1.0),
@@ -299,7 +317,10 @@ fn preview(effect: Effect, x: f32, y: f32, t: f32, base: (u8, u8, u8)) -> (u8, u
         Effect::StarsTwinkle => {
             let slot = (t * 2.0 + hash(x as i32, y as i32) * 4.0) as i32;
             let h = hash(x as i32 * 7 + y as i32, slot);
-            scale(hsv(h * 360.0 * 3.0, 1.0, 1.0), if h > 0.6 { 1.0 } else { 0.0 })
+            scale(
+                hsv(h * 360.0 * 3.0, 1.0, 1.0),
+                if h > 0.6 { 1.0 } else { 0.0 },
+            )
         }
         Effect::RetroSnake => {
             let idx = (y as i32 * 16
@@ -342,6 +363,7 @@ struct Configurator {
     started: Instant,
     effect_dirty: bool,
     custom: Vec<u32>,
+    picker: ColorPicker,
     orig_keys: Vec<Key>,
     connected: bool,
     layout: Option<usize>,
@@ -378,9 +400,19 @@ impl Configurator {
     fn new(path: PathBuf, cx: &mut Context<Self>) -> Self {
         let (keys, status) = match std::fs::read_to_string(&path).map(|s| parse_config(&s)) {
             Ok(Ok(k)) => (k, format!("Loaded {}", path.display())),
-            _ => (
+            Ok(Err(e)) => (
                 parse_config(DEFAULT_CONFIG).expect("bundled default config"),
-                format!("{} not found: showing bundled defaults", path.display()),
+                format!(
+                    "Invalid config ({}): {e:#}; showing bundled defaults",
+                    path.display()
+                ),
+            ),
+            Err(e) => (
+                parse_config(DEFAULT_CONFIG).expect("bundled default config"),
+                format!(
+                    "Could not read {}: {e}; showing bundled defaults",
+                    path.display()
+                ),
             ),
         };
         let mut s = Self {
@@ -405,6 +437,7 @@ impl Configurator {
             started: Instant::now(),
             effect_dirty: false,
             custom: Vec::new(),
+            picker: ColorPicker::default(),
             orig_keys: Vec::new(),
         };
         s.orig_keys = s.keys.clone();
@@ -429,10 +462,33 @@ impl Configurator {
             .map(|(_, n)| n.as_str())
     }
 
+    fn sync_picker(&mut self) {
+        if let Some(i) = self.selected {
+            let c = &self.keys[i].color;
+            self.picker.sync_rgb(c.r, c.g, c.b);
+        }
+    }
+
+    fn mark_colour_edit(&mut self) {
+        self.effect = Effect::Custom;
+        self.effect_dirty = true;
+        self.status = "Colour edited: Apply enables Custom per-key lighting".into();
+    }
+
+    fn update_picker_color(&mut self) {
+        if let Some(i) = self.selected {
+            let (r, g, b) = self.picker.rgb();
+            self.keys[i].color = Color::create(r, g, b);
+            self.mark_colour_edit();
+        }
+    }
+
     fn set_color(&mut self, rgb_val: u32) {
         if let Some(i) = self.selected {
             let (r, g, b) = ((rgb_val >> 16) as u8, (rgb_val >> 8) as u8, rgb_val as u8);
             self.keys[i].color = Color::create(r, g, b);
+            self.mark_colour_edit();
+            self.sync_picker();
         }
     }
 
@@ -445,6 +501,8 @@ impl Configurator {
                 _ => (c.r, c.g, v),
             };
             *c = Color::create(r, g, b);
+            self.mark_colour_edit();
+            self.sync_picker();
         }
     }
 
@@ -458,6 +516,8 @@ impl Configurator {
                 _ => (c.r, c.g, f(c.b)),
             };
             *c = Color::create(r, g, b);
+            self.mark_colour_edit();
+            self.sync_picker();
         }
     }
 
@@ -522,7 +582,7 @@ impl Configurator {
             }
             Err(e) => {
                 self.refresh_device();
-                self.status = format!("Reload failed ({}): {e}", path.display());
+                self.status = format!("Reload failed ({}): {e:#}", path.display());
             }
         }
     }
@@ -549,7 +609,7 @@ impl Configurator {
                 self.selected = None;
                 self.status = format!("Loaded profile \"{name}\": press Apply to send it");
             }
-            Err(e) => self.status = format!("Could not load profile \"{name}\": {e}"),
+            Err(e) => self.status = format!("Could not load profile \"{name}\": {e:#}"),
         }
     }
 
@@ -602,6 +662,10 @@ impl Configurator {
     /// Write only what was edited: key codes, per-key colours and/or the lighting effect.
     fn apply(&mut self) {
         let keys = self.keys.clone();
+        if let Err(e) = validate_keys(&keys) {
+            self.status = format!("Apply failed: {e:#}");
+            return;
+        }
         let changed = |f: &dyn Fn(&Key, &Key) -> bool| {
             keys.iter().any(|k| {
                 self.orig_keys
@@ -622,11 +686,11 @@ impl Configurator {
             if keys_changed {
                 d.set_keys(KeyLayer::Normal, &keys)?;
             }
-            if effect_changed {
-                d.set_light_mode(effect)?;
-            }
             if colours_changed {
                 d.set_custom_light(&keys)?;
+            }
+            if effect_changed {
+                d.set_light_mode(effect)?;
             }
             Ok(())
         }) {
@@ -646,7 +710,7 @@ impl Configurator {
                     .join(", ")
                 )
             }
-            Err(e) => format!("Apply failed: {e}"),
+            Err(e) => format!("Apply failed: {e:#}"),
         };
     }
 
@@ -756,11 +820,8 @@ impl Render for Configurator {
         }
         // Matrix positions with no physical key on this ANSI board (e.g. the ISO `#` and `<>`
         // slots) are kept in `self.keys` so Apply writes them back unchanged, but not drawn.
-        let rows = 6.0;
-        let mut board = div()
-            .relative()
-            .w(px(max_x * U))
-            .h(px(rows * U));
+        let rows = 6.0 + FUNCTION_ROW_GAP;
+        let mut board = div().relative().w(px(max_x * U)).h(px(rows * U));
         let lighting = self.tab == Tab::Lighting;
         for (i, px_x, px_y, kw) in placed {
             let k = &self.keys[i];
@@ -800,7 +861,9 @@ impl Render for Configurator {
                 .id(("key", i))
                 .absolute()
                 .left(px(px_x * U + 1.0))
-                .top(px(px_y * U + 1.0))
+                .top(px((px_y + if px_y > 0.0 { FUNCTION_ROW_GAP } else { 0.0 })
+                    * U
+                    + 1.0))
                 .w(px(if is_knob { h } else { w }))
                 .h(px(h))
                 .rounded(px(if is_knob { h } else { 6.0 }))
@@ -850,6 +913,7 @@ impl Render for Configurator {
                 )
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.selected = Some(i);
+                    this.sync_picker();
                     cx.notify();
                 })),
             );
@@ -904,6 +968,7 @@ impl Render for Configurator {
                                         .child(format!("#{cur:06X}")),
                                 ),
                         )
+                        .child(color_picker::render(self.picker, cx))
                         .children(
                             [("R", r, 0usize), ("G", g, 1), ("B", bl, 2)]
                                 .into_iter()
@@ -1049,7 +1114,12 @@ impl Render for Configurator {
             .border_color(rgb(0x34343c))
             .bg(rgb(0x1b1b20))
             .shadow(vec![BoxShadow {
-                color: Hsla { h: 0.0, s: 0.0, l: 0.0, a: 0.6 },
+                color: Hsla {
+                    h: 0.0,
+                    s: 0.0,
+                    l: 0.0,
+                    a: 0.6,
+                },
                 offset: point(px(0.0), px(10.0)),
                 blur_radius: px(24.0),
                 spread_radius: px(0.0),
@@ -1132,8 +1202,8 @@ impl Render for Configurator {
                                     this.effect_dirty = true;
                                     cx.notify();
                                 }))
-                        },
-                    ))),
+                        })),
+                ),
             );
         }
 
@@ -1281,10 +1351,17 @@ impl Configurator {
                             .text_color(rgb(MUTED_FG))
                             .hover(|s| s.bg(rgb(SURFACE)))
                             .cursor_pointer()
-                            .child(div().size(px(8.0)).rounded_full().bg(rgb(
-                                if self.connected { 0x22c55e } else { 0x71717a },
-                            )))
-                            .child(if self.connected { "Connected (USB)" } else { "Not connected" })
+                            .child(
+                                div()
+                                    .size(px(8.0))
+                                    .rounded_full()
+                                    .bg(rgb(if self.connected { 0x22c55e } else { 0x71717a })),
+                            )
+                            .child(if self.connected {
+                                "Connected (USB)"
+                            } else {
+                                "Not connected"
+                            })
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.refresh_device();
                                 cx.notify();
@@ -1327,14 +1404,12 @@ impl Configurator {
                                     },
                                 )),
                             )
-                            .child(
-                                button("save", "Save", Variant::Green).on_click(cx.listener(
-                                    |this, _, _, cx| {
-                                        this.save();
-                                        cx.notify();
-                                    },
-                                )),
-                            )
+                            .child(button("save", "Save", Variant::Green).on_click(cx.listener(
+                                |this, _, _, cx| {
+                                    this.save();
+                                    cx.notify();
+                                },
+                            )))
                             .child(
                                 button("read", "Read from keyboard", Variant::Amber).on_click(
                                     cx.listener(|this, _, _, cx| {
@@ -1379,20 +1454,28 @@ impl Configurator {
             .gap_1()
             .child(section("Profiles"))
             .child(
-                Self::item(("profile", usize::MAX), "Default", self.active_profile.is_none())
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.active_profile = None;
-                        this.reload();
-                        cx.notify();
-                    })),
+                Self::item(
+                    ("profile", usize::MAX),
+                    "Default",
+                    self.active_profile.is_none(),
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.active_profile = None;
+                    this.reload();
+                    cx.notify();
+                })),
             )
             .children(self.profiles.iter().enumerate().map(|(pi, name)| {
                 let n = name.clone();
-                Self::item(("profile", pi), name, self.active_profile.as_deref() == Some(name))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.load_profile(&n);
-                        cx.notify();
-                    }))
+                Self::item(
+                    ("profile", pi),
+                    name,
+                    self.active_profile.as_deref() == Some(name),
+                )
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.load_profile(&n);
+                    cx.notify();
+                }))
             }));
         profiles = match &self.naming {
             Some(text) => profiles.child(
@@ -1451,8 +1534,8 @@ impl Configurator {
                     cx.listener(|this, _, _, cx| {
                         this.delete_profile();
                         cx.notify();
-                    }),
-                ),
+                    },
+                )),
             );
         }
         let mut side = div()
@@ -1531,7 +1614,8 @@ fn main() {
             window_background: gpui::WindowBackgroundAppearance::Opaque,
             ..Default::default()
         };
-        cx.open_window(opts, |_, cx| {
+        cx.open_window(opts, |window, cx| {
+            window.set_window_title("AULA F75 Configurator");
             cx.new(|cx| {
                 cx.spawn(async move |this, cx| {
                     loop {
@@ -1539,7 +1623,7 @@ fn main() {
                             .timer(Duration::from_millis(33))
                             .await;
                         let alive = this.update(cx, |s: &mut Configurator, cx| {
-                            if s.tab == Tab::Lighting {
+                            if s.tab == Tab::Lighting && !matches!(s.effect, Effect::Custom | Effect::Off) {
                                 cx.notify();
                             }
                         });
